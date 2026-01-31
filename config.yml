@@ -71,7 +71,7 @@ Locations:
     Anchor: true
     ROOTTYPE: 'Photos'
     ReviewOrphans: true
-    import_from_root_only: true
+    ScanDepth: 1
     Recursive: false
 
   # --- RAW WORKFLOW ARCHIVE ---
@@ -83,7 +83,8 @@ Locations:
     Anchor: true
     ROOTTYPE: 'Photography'
     ReviewOrphans: true
-    import_from_root_only: true
+    # Use 1 for root only, 0 or 99 for infinite
+    ScanDepth: 1
     Recursive: false
 
   # --- ORGANIZED COLLECTIONS ---
@@ -94,7 +95,7 @@ Locations:
     Scope: 'Local'
     Anchor: true
     ReviewOrphans: true
-    import_from_root_only: true
+    ScanDepth: 1
 
   # --- PASSIVE SINKS ---
   - Name: 'Videos'
@@ -144,28 +145,7 @@ Locations:
     ChronoSort: true
     ROOTTYPE: 'Photos'
     Anchor: false
-    import_from_root_only: false
-    Recursive: true
-
-  - Name: 'AuraDoc'
-    Path: 'C:\Users\mille\Documents\AuraDoc\sources'
-    Monitor: true
-    ChronoSort: true
-    ROOTTYPE: 'Photos'
-    Anchor: false
-    CleanupOrphans: true
-    SidecarExtensions: ['.json', '.tmp']
-    import_from_root_only: false
-    Recursive: true
-
-  # --- THE WEBSITE LIBRARY ---
-  - Name: 'MakeMeASammich'
-    Path: 'H:\MakeMeASammich\website\docs\recipes'
-    Monitor: true
-    ChronoSort: false
-    Scope: 'Local'
-    Anchor: true
-    ReviewOrphans: true
+    import_from_root_only: falsefv
     WebType: 'recipes'
     WebUpdate: true
     Recursive: true

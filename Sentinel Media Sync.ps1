@@ -319,55 +319,51 @@ if ($Orphans.Count -gt 0) {
         }
     }
 }
-
 # --- PHASE 4: PURGE & CLEANUP ---
 Write-Host "`nPHASE 4: PURGE & CLEANUP..." -ForegroundColor White
 
 foreach ($loc in $ActiveLocs) {
     Write-Host "`n  Target: $($loc.Name)" -ForegroundColor Yellow
 
-    $AllFiles = Get-ChildItem $loc.Path -Recurse -File
     $JunkList = $YamlData.Junk
-    $LastDir = ""
-    $LineWidth = 115 # Slightly wider to handle folder + file
+    $ConsoleWidth = $Host.UI.RawUI.WindowSize.Width - 1
 
-    foreach ($file in $AllFiles) {
-        # Update our directory tracker
-        if ($file.DirectoryName -ne $LastDir) {
-            $LastDir = $file.DirectoryName
+    # NEW LOGIC: Only fetch files that match your Junk names
+    # This ignores your .jpg and .xmp files entirely!
+    $FilesToRemove = Get-ChildItem $loc.Path -Recurse -File | Where-Object { $JunkList -contains $_.Name }
+
+    foreach ($file in $FilesToRemove) {
+        $ShortPath = $file.DirectoryName.Replace($loc.Path, "...")
+        $StatusText = "    [JUNK FOUND] $ShortPath >> $($file.Name)"
+
+        if ($StatusText.Length -gt $ConsoleWidth) {
+            $StatusText = $StatusText.Substring(0, $ConsoleWidth - 3) + "..."
         }
 
-        # CONSTRUCT THE JOINT LINE: [Folder] >> [File]
-        $ShortPath = $LastDir.Replace($loc.Path, "...")
-        $StatusText = "    Scanning: $ShortPath >> Junk Check: $($file.Name)"
-
-        # Output on a single line using `r and -NoNewline
-        Write-Host ("`r" + $StatusText).PadRight($LineWidth) -NoNewline -ForegroundColor Gray
-
-        # JUNK REMOVAL LOGIC
-        if ($JunkList -contains $file.Name) {
-            if (-not $DryRun) {
-                Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
-                $stats.PurgedFiles++
-                # Break line only when a deletion happens so we see the "hit"
-                Write-Host "`n      [DELETED] $($file.Name)" -ForegroundColor Red
-            }
+        if (-not $DryRun) {
+            Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
+            $stats.PurgedFiles++
+            # Using `r to show the live deletion progress without scrolling
+            Write-Host ("`r" + $StatusText.PadRight($ConsoleWidth)) -NoNewline -ForegroundColor Red
         }
     }
 
     # --- Part B: Empty Folder Cleanup ---
+    # This stays the same - it targets folders with 0 items
     $EmptyFolders = Get-ChildItem $loc.Path -Recurse -Directory |
                     Where-Object { (Get-ChildItem $_.FullName -Force).Count -eq 0 } |
                     Sort-Object -Property @{Expression={$_.FullName.Length}} -Descending
 
-    if ($EmptyFolders) { Write-Host "`n    Pruning empty branches..." -ForegroundColor DarkYellow }
+    if ($EmptyFolders) {
+        Write-Host "`n    Pruning empty branches..." -ForegroundColor DarkYellow
+    }
 
     foreach ($folder in $EmptyFolders) {
         if (-not $DryRun) {
             $FolderName = Split-Path $folder.FullName -Leaf
             Remove-Item $folder.FullName -Force -ErrorAction SilentlyContinue
             $stats.PurgedFolders++
-            Write-Host ("`r      [REMOVED EMPTY] ...\$FolderName").PadRight($LineWidth) -NoNewline -ForegroundColor DarkGray
+            Write-Host ("`r      [REMOVED EMPTY] ...\$FolderName").PadRight($ConsoleWidth) -NoNewline -ForegroundColor DarkGray
         }
     }
 }

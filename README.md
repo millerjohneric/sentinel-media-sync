@@ -1,93 +1,90 @@
-# Sentinel Media Sync v9.1
+......
+# Sentinel Media Sync v12.17
+### *The Streaming Odometer Engine*
 
-### *The ChronoSort Engine*
-
-Sentinel is a high-performance PowerShell automation suite designed to index, protect, and chronologically organize massive media libraries across local and network storage (NAS).
+Sentinel is a high-performance PowerShell automation suite designed for 'Live-Look' media management. It utilizes a Streaming Pipeline to provide instant feedback and real-time junk purging across massive photo/video libraries without the overhead of bulk indexing.
 
 ---
 
 ## 📂 1. System Inventory
-
-* **`Sentinel Media Sync v9.1.ps1`**: The primary execution engine.
-* **`config.yml`**: The mission control file for paths, file types, and exclusion rules.
-* **`Sentinel-Register-Task.ps1`**: Schedules the mission for 02:00 AM daily.
-* **`Undo-Last-Evacuation.ps1`**: A dynamically generated script to restore files moved to the Archive by mistake.
-* **`.secure/email-settings.ps1`**: Stores encrypted Gmail credentials (auto-generated).
-* **`Sentinel_Session.log`**: The flight recorder for all automated runs.
+* **'Sentinel Media Sync.ps1'**: The primary streaming engine.
+* **'config.yml'**: Mission control. Uses single-quote keys and no inline comments.
+* **'Sentinel-Register-Task.ps1'**: Schedules the 02:00 AM daily sync.
+* **'Undo-Last-Evacuation.ps1'**: Emergency restoration script for accidental moves.
+* **'Sentinel_Session.log'**: Full transcript flight recorder.
 
 ---
 
-## ⚙️ 2. Core Logic: ChronoSort & Scope
+## ⚙️ 2. Advanced Purge Logic (Phase 4)
+Phase 4 operates on a 'Two-Pass Sentinel' model to ensure drive health and deep cleaning:
 
-Sentinel uses a "Strategy/Scope" matrix to decide how to handle your files.
+### **Pass A: The Junk Scan (Live Odometer)**
+Instead of a silent batch delete, Sentinel streams every file through a dynamic odometer.
+* **Heartbeat Counter**: Displays (X files...) to confirm the drive is responsive.
+* **Cold Storage Skip**: Folders older than 365 days (configurable) are acknowledged as 'Cold Storage' and bypassed instantly.
+* **Junk Target**: Specifically hunts files defined in the Junk list (e.g., Thumbs.db, desktop.ini).
 
-### **The Strategies (How to move)**
-
-* **`ChronoSort: true` [Sort]**: The "Postman" logic. Actively moves files into `\Year\MM Month\` folders based on their date.
-* **`ChronoSort: false` [Keep]**: The "Librarian" logic. Indexes files for safety but refuses to move them.
-
-### **The Scopes (Where to move)**
-
-* **`Scope: Global`**: Files are allowed to "teleport" from landing zones (phones) to your central Archive roots.
-* **`Scope: Local`**: Files are "tethered." They can be sorted by date, but they are forbidden from leaving their root folder.
+### **Pass B: Recursive Pruning**
+Once junk is removed, Sentinel performs a 'Deepest-First' search for empty folders. Removing a junk file often 'unlocks' a folder for deletion, causing a chain reaction that collapses empty directory trees.
 
 ---
 
-## 🛠️ 3. Configuration Guide
+## 🛠️ 3. Configuration ('config.yml')
+**Strict Formatting Rules:**
+1. **No Inline Comments**: Do not place # comments on the same line as keys or values.
+2. **Single Quotes**: Use single quotes for all key/value assignments.
 
-Open `config.yml` to set up your environment.
+'Settings':
+  'DryRun': 'false'
+  'SkipDays': '365'
 
-### **Defining Exclusions**
+'Junk':
+  - 'Thumbs.db'
+  - 'desktop.ini'
+  - '.DS_Store'
 
-To prevent Sentinel from "cleaning up" website documentation or system files, add them to the `Exclusions` block:
-
-```yaml
-Exclusions:
-  IgnoreFolders: [".webaxs", ".idea", "@eaDir", "temp"]
-  IgnoreFiles: ["index.md", "metadata.yml", "Thumbs.db", "desktop.ini"]
-
-```
-
-* **IgnoreFiles**: Prevents specific filenames or extensions from being moved during the Archive Sweep.
-* **IgnoreFolders**: Prevents Sentinel from scanning or modifying specific directories.
-
-### **The ROOTTYPE Map**
-
-If a folder is set to `Scope: Global`, Sentinel uses the `ROOTTYPE` of your archive locations as the "Home Base":
-
-* **Photos** -> Central path for standard images.
-* **Photography** -> Central path for RAW formats (e.g., .NEF, .ARW).
-* **Videos** -> Central path for movie files.
+'Exclusions':
+  'IgnoreFolders':
+    - '.webaxs'
+    - 'temp'
+  'IgnoreFiles':
+    - 'metadata.yml'
 
 ---
 
-## 📊 4. Dashboard & Color Coding
+## 📊 4. The Live Dashboard
+The console uses a dynamic width odometer to prevent stacking and provide real-time status:
 
-The "Pre-Flight" screen provides a high-visibility mission review:
-
-| Label | Color | Logic Meaning |
-| --- | --- | --- |
-| **[Sort]** | **Cyan** | **The Postman:** ChronoSort is active. |
-| **[Keep]** | **Gray** | **The Librarian:** Folder is protected; no moves. |
-| **[Global]** | **Magenta** | **The Traveler:** Files can move to central Archive roots. |
-| **[Local]** | **Yellow** | **The Tether:** Files are locked to this root directory. |
-| **[ACTIVE]** | **Green** | **Online:** The path is reachable. |
-| **[OFFLINE]** | **Red** | **Disconnected:** Path is missing; Sentinel will skip. |
+| Status | Color | Meaning |
+| :--- | :--- | :--- |
+| **Scanning** | **Cyan** | Active directory being streamed with a file heartbeat. |
+| **[SKIPPED]** | **DarkGray** | Folder is in 'Cold Storage' (Older than the Skip threshold). |
+| **[DELETED]** | **Red** | A specific junk file was found and removed. |
+| **[REMOVED EMPTY]** | **DarkGray** | An empty directory tree has been collapsed. |
+| **>> Cleaned** | **Green** | Target location has been fully processed. |
 
 ---
 
-## 🚑 5. Recovery: The "Oops" Button
+## 🚀 5. Getting Started
 
+### **Installation**
+1. **Clone the Repository**:
+   git clone H:/sentinel-media-sync
+2. **Verify Paths**: Ensure your 'config.yml' points to valid Anchor and Source locations.
+3. **Permissions**: Run PowerShell as Administrator to ensure Remove-Item has authority over system files.
+
+### **Deployment**
+Run the main script manually once to verify connectivity:
+powershell: ./'Sentinel Media Sync.ps1'
+
+To automate the mission, execute the registrar:
+powershell: ./Sentinel-Register-Task.ps1
+
+---
+
+## 🚑 6. Recovery: The "Oops" Button
 If Sentinel "Evacuates" files to the Archive that you want back:
-
-1. **Locate** `Undo-Last-Evacuation.ps1` in the script directory.
+1. **Locate** 'Undo-Last-Evacuation.ps1' in the script directory.
 2. **Execute** the script with PowerShell.
-3. **Result**: Every file listed in the most recent `recovery_map.csv` is moved back to its original location, and the folders are recreated if necessary.
-
----
-
-## 🚀 6. Installation & Deployment
-
-1. **Path Configuration:** Update `config.yml` with your UNC or local paths.
-2. **Initial Run:** Run the main script manually once to set up Email Secrets.
-3. **Automation:** Run `Sentinel-Register-Task.ps1` to schedule the 02:00 AM daily sync.
+3. **Result**: Every file listed in the most recent 'recovery_map.csv' is moved back to its original location, and the folders are recreated if necessary.
+......

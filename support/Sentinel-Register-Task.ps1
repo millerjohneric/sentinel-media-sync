@@ -33,3 +33,4 @@ try {
     Write-Error "Task registration failed: $_"
 }
 Write-Host "Script Target: $ScriptPath"
+
