@@ -187,21 +187,26 @@ function AutoStartWebSite {
         [string]$Path
     )
 
-    # Force UTF8 for the session to fix the weird character icons
+    # Force UTF8 for this session to fix the ðŸš€ icon issues
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-    Write-Host "`n[AUTOSTART] Website generation complete." -ForegroundColor Green
+    Write-Host "`n🚀 Preparing to launch Docusaurus..." -ForegroundColor Cyan
 
     if (Test-Path $Path) {
-        Write-Host "🚀 Launching Docusaurus Server in a new window..." -ForegroundColor Cyan
-        Write-Host "🏠 Path: $Path" -ForegroundColor Gray
+        Write-Host "🏠 Site Root: $Path" -ForegroundColor Gray
+        Write-Host "🦖 Spawning Development Server in a NEW window..." -ForegroundColor Green
 
-        # Start-Process launches the server in its own window so the main script can finish
-        Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", "Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
+        # We launch a separate PowerShell window for the server
+        # -NoExit keeps the window open if there is an error
+        # -Command runs the location change and the start command
+        $ArgList = "-NoExit", "-Command", "Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
 
-        Write-Host "✅ Server is spinning up. You can view it at http://localhost:3000" -ForegroundColor Yellow
+        Start-Process powershell.exe -ArgumentList $ArgList
+
+        Write-Host "💡 Access locally at http://localhost:3000" -ForegroundColor Yellow
+        Write-Host "✅ Mission complete. This window will now close." -ForegroundColor Gray
     }
     else {
-        Write-Host "❌ Error: Cannot find site path: $Path" -ForegroundColor Red
+        Write-Host "❌ Error: Cannot find $Path" -ForegroundColor Red
     }
 }
