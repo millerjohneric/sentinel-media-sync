@@ -1,0 +1,17 @@
+﻿# === PyCharm / JetBrains ===
+.idea/
+*.iml
+cmake-build-*/
+out/
+
+# === Sentinel Media Sync Logs ===
+/Sentinel_Session.log
+
+# === System & OS Files ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Secret PII ===
+/.secure/
+/Archive/

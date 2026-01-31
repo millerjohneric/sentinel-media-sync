@@ -1,0 +1,168 @@
+# ==============================================================================
+# Sentinel Media Sync config v11
+# ==============================================================================
+
+Settings:
+  DefaultYear: 2026
+  DateFormat: "%Y/%m Month"
+  DryRun: true
+  LogPath: 'H:\sentinel-media-sync\Sentinel_Session.log'
+  PurgeTransient: true
+  GlobalExclusions:
+    - '.webaxs'
+    - '$RECYCLE.BIN'
+    - 'System Volume Information'
+    - 'Thumbs.db'
+    - 'desktop.ini'
+    - '.DS_Store'
+    - 'ehthumbs.db'
+
+FileTypes:
+  # Images route to ROOTTYPE: Photos
+  Images:
+    - '.jpg'
+    - '.jpeg'
+    - '.png'
+    - '.heic'
+    - '.tif'
+    - '.tiff'
+  # RAWs route to ROOTTYPE: Photography
+  RAWs:
+    - '.nef'
+    - '.cr2'
+    - '.arw'
+    - '.dng'
+  # Videos route to ROOTTYPE: Videos
+  Videos:
+    - '.mp4'
+    - '.mov'
+    - '.avi'
+    - '.mkv'
+  # Audio routes to ROOTTYPE: Audio
+  Audio:
+    - '.mp3'
+    - '.wav'
+    - '.flac'
+    - '.m4a'
+  # Docs have no auto-routing (none)
+  Docs:
+    - '.pdf'
+    - '.docx'
+    - '.txt'
+  # Sidecars follow the main file
+  Sidecars:
+    - '.xmp'
+    - '.json'
+    - '.xml'
+
+Locations:
+  # --- THE GLOBAL ARCHIVE ---
+  - Name: 'Photos'
+    Path: 'H:\Photos'
+    Monitor: true
+    ChronoSort: true
+    Scope: 'Global'
+    Anchor: true
+    ROOTTYPE: 'Photos'
+    ReviewOrphans: true
+    import_from_root_only: true
+    Recursive: false
+
+  # --- RAW WORKFLOW ARCHIVE ---
+  - Name: 'Photography'
+    Path: 'P:\Photography'
+    Monitor: true
+    ChronoSort: true
+    Scope: 'Local'
+    Anchor: true
+    ROOTTYPE: 'Photography'
+    ReviewOrphans: true
+    import_from_root_only: true
+    Recursive: false
+
+  # --- ORGANIZED COLLECTIONS ---
+  - Name: 'PhotoGroups'
+    Path: 'H:\PhotoGroups'
+    Monitor: true
+    ChronoSort: false
+    Scope: 'Local'
+    Anchor: true
+    ReviewOrphans: true
+    import_from_root_only: true
+
+  # --- PASSIVE SINKS ---
+  - Name: 'Videos'
+    Path: 'H:\Videos'
+    Monitor: false
+    Anchor: true
+    ROOTTYPE: 'Videos'
+
+  - Name: 'Audio'
+    Path: 'H:\Audio'
+    Monitor: false
+    Anchor: true
+    ROOTTYPE: 'Audio'
+
+  # --- THE LANDING ZONES ---
+  - Name: 'John'
+    Path: 'P:\John'
+    Monitor: true
+    ChronoSort: true
+    Scope: 'Global'
+    Anchor: false
+    Recursive: true
+    import_from_root_only: false
+
+  - Name: 'Roena'
+    Path: 'P:\Roena'
+    Monitor: true
+    ChronoSort: true
+    Scope: 'Global'
+    Anchor: false
+    Recursive: true
+    import_from_root_only: false
+
+  - Name: 'BigAssTablet'
+    Path: 'P:\BigAssTablet'
+    Monitor: true
+    ChronoSort: true
+    Scope: 'Global'
+    Anchor: false
+    Recursive: true
+    import_from_root_only: false
+
+  # --- DOCUMENT SCANNER SOURCES ---
+  - Name: 'CzurDoc'
+    Path: 'C:\Users\mille\Documents\CzurDoc\sources'
+    Monitor: true
+    ChronoSort: true
+    ROOTTYPE: 'Photos'
+    Anchor: false
+    import_from_root_only: false
+    Recursive: true
+
+  - Name: 'AuraDoc'
+    Path: 'C:\Users\mille\Documents\AuraDoc\sources'
+    Monitor: true
+    ChronoSort: true
+    ROOTTYPE: 'Photos'
+    Anchor: false
+    CleanupOrphans: true
+    SidecarExtensions: ['.json', '.tmp']
+    import_from_root_only: false
+    Recursive: true
+
+  # --- THE WEBSITE LIBRARY ---
+  - Name: 'MakeMeASammich'
+    Path: 'H:\MakeMeASammich\website\docs\recipes'
+    Monitor: true
+    ChronoSort: false
+    Scope: 'Local'
+    Anchor: true
+    ReviewOrphans: true
+    WebType: 'recipes'
+    WebUpdate: true
+    Recursive: true
+    Patterns:
+      - '*.md'
+      - '*.html'

@@ -1,0 +1,18 @@
+$ignoreContent = @"
+# === PyCharm / JetBrains ===
+.idea/
+*.iml
+cmake-build-*/
+out/
+
+# === Sentinel Media Sync Logs ===
+move-log*.txt
+errors.txt
+
+# === System & OS Files ===
+.DS_Store
+Thumbs.db
+desktop.ini
+"@
+
+Set-Content -Path ".gitignore" -Value $ignoreContent -Encoding utf8
