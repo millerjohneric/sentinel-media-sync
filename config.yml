@@ -1,154 +1,147 @@
-# ==============================================================================
-# Sentinel Media Sync config v11
-# ==============================================================================
-
-Settings:
-  DefaultYear: 2026
-  DateFormat: "%Y/%m Month"
-  DryRun: true
-  LogPath: 'H:\sentinel-media-sync\Sentinel_Session.log'
-  PurgeTransient: true
-  GlobalExclusions:
+'Settings':
+  'LogPath': 'H:\sentinel-media-sync\-log\'
+  'DryRun': false
+  'EmailSettings':
+    'Enabled': true
+    'To': 'millerjohneric@gmail.com'
+  'DefaultYear': 2026
+  'DateFormat': '%Y/%m Month'
+  'ChronoRegex': '^\d{4}/\d{2}\s\w+$'
+  'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\\])*[a-zA-Z0-9_\-\s]+$'
+  'TemplateDir': 'H:\MakeMeASammich\website\templates'
+  'PurgeTransient': true
+  'Exclusions':
     - '.webaxs'
     - '$RECYCLE.BIN'
     - 'System Volume Information'
+
+'FileTypes':
+  'Images': ['.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff']
+  'RAWs': ['.nef', '.cr2', '.arw', '.dng']
+  'Videos': ['.mp4', '.mov', '.avi', '.mkv']
+  'Audio': ['.mp3', '.wav', '.flac', '.m4a']
+  'Docs': ['.pdf', '.docx', '.txt']
+  'Web': ['.md', '.html']
+  'Sidecars': ['.xmp', '.json', '.xml']
+  'Junk':
     - 'Thumbs.db'
     - 'desktop.ini'
     - '.DS_Store'
     - 'ehthumbs.db'
-
-FileTypes:
-  # Images route to ROOTTYPE: Photos
-  Images:
-    - '.jpg'
-    - '.jpeg'
-    - '.png'
-    - '.heic'
-    - '.tif'
-    - '.tiff'
-  # RAWs route to ROOTTYPE: Photography
-  RAWs:
-    - '.nef'
-    - '.cr2'
-    - '.arw'
-    - '.dng'
-  # Videos route to ROOTTYPE: Videos
-  Videos:
+  'Recipes':
+    - 'Images'
+    - 'Docs'
+    - 'Sidecars'
+    - 'Web'
     - '.mp4'
-    - '.mov'
-    - '.avi'
-    - '.mkv'
-  # Audio routes to ROOTTYPE: Audio
-  Audio:
-    - '.mp3'
-    - '.wav'
-    - '.flac'
-    - '.m4a'
-  # Docs have no auto-routing (none)
-  Docs:
-    - '.pdf'
-    - '.docx'
-    - '.txt'
-  # Sidecars follow the main file
-  Sidecars:
-    - '.xmp'
-    - '.json'
-    - '.xml'
-  # Junk files get deleted
-  Junk:
-    - 'Thumbs.db'
-    - 'desktop.ini'
-    - '.DS_Store'
-    - 'ehthumbs.db'
 
-Locations:
-  # --- THE GLOBAL ARCHIVE ---
-  - Name: 'Photos'
-    Path: 'H:\Photos'
-    Monitor: true
-    ChronoSort: true
-    Scope: 'Global'
-    Anchor: true
-    ROOTTYPE: 'Photos'
-    ReviewOrphans: true
-    ScanDepth: 1
-    Recursive: false
+'Locations':
+# --- ARCHIVES (Destinations) ---
+  - 'Name': 'Photos'
+    'Path': 'H:\Photos'
+    'Role': 'Photo_Archive'
+    'MonitorDepth': 1
+    'SortDepth': 1
+    'RootType': 'Photos'
+    'PurgeOrphan': true
+    'Structure':
+      - 'Chrono'
 
-  # --- RAW WORKFLOW ARCHIVE ---
-  - Name: 'Photography'
-    Path: 'P:\Photography'
-    Monitor: true
-    ChronoSort: true
-    Scope: 'Local'
-    Anchor: true
-    ROOTTYPE: 'Photography'
-    ReviewOrphans: true
-    # Use 1 for root only, 0 or 99 for infinite
-    ScanDepth: 1
-    Recursive: false
+  - 'Name': 'Photography'
+    'Path': 'P:\Photography'
+    'Role': 'RAW_Archive'
+    'MonitorDepth': 1
+    'SortDepth': 1
+    'PurgeOrphan': true
+    'RootType': 'RAW'
+    'Structure':
+      - 'Chrono'
+      - 'Event'
 
-  # --- ORGANIZED COLLECTIONS ---
-  - Name: 'PhotoGroups'
-    Path: 'H:\PhotoGroups'
-    Monitor: true
-    ChronoSort: false
-    Scope: 'Local'
-    Anchor: true
-    ReviewOrphans: true
-    ScanDepth: 1
+  - 'Name': 'ExcessPhotos'
+    'Path': 'W:\ExcessPhotos'
+    'Role': 'InPlace_Archive'
+    'MonitorDepth': 2
+    'PurgeOrphan': true
+    'RootType': 'RAW'
+    'Structure':
+      - 'Chrono'
+      - 'Event'
 
-  # --- PASSIVE SINKS ---
-  - Name: 'Videos'
-    Path: 'H:\Videos'
-    Monitor: false
-    Anchor: true
-    ROOTTYPE: 'Videos'
+# --- PASSIVE SINKS ---
+  - 'Name': 'Videos'
+    'Path': 'H:\Videos'
+    'Role': 'Video_Archive'
+    'MonitorDepth': 0
+    'SortDepth': 1
+    'PurgeOrphan': true
+    'RootType': 'Videos'
+    'Structure':
+      - 'Chrono'
 
-  - Name: 'Audio'
-    Path: 'H:\Audio'
-    Monitor: false
-    Anchor: true
-    ROOTTYPE: 'Audio'
+  - 'Name': 'Audio'
+    'Path': 'H:\Audio'
+    'Role': 'Audio_Archive'
+    'MonitorDepth': 0
+    'SortDepth': 1
+    'PurgeOrphan': true
+    'RootType': 'Audio'
+    'Structure':
+      - 'Chrono'
 
-  # --- THE LANDING ZONES ---
-  - Name: 'John'
-    Path: 'P:\John'
-    Monitor: true
-    ChronoSort: true
-    Scope: 'Global'
-    Anchor: false
-    Recursive: true
-    import_from_root_only: false
+# --- PICKUP ZONES (Loading Zones) ---
+  - 'Name': 'John'
+    'Path': 'P:\John'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': true
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
 
-  - Name: 'Roena'
-    Path: 'P:\Roena'
-    Monitor: true
-    ChronoSort: true
-    Scope: 'Global'
-    Anchor: false
-    Recursive: true
-    import_from_root_only: false
+  - 'Name': 'Roena'
+    'Path': 'P:\Roena'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': true
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
 
-  - Name: 'BigAssTablet'
-    Path: 'P:\BigAssTablet'
-    Monitor: true
-    ChronoSort: true
-    Scope: 'Global'
-    Anchor: false
-    Recursive: true
-    import_from_root_only: false
+  - 'Name': 'BigAssTablet'
+    'Path': 'P:\BigAssTablet'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': true
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
 
-  # --- DOCUMENT SCANNER SOURCES ---
-  - Name: 'CzurDoc'
-    Path: 'C:\Users\mille\Documents\CzurDoc\sources'
-    Monitor: true
-    ChronoSort: true
-    ROOTTYPE: 'Photos'
-    Anchor: false
-    import_from_root_only: falsefv
-    WebType: 'recipes'
-    WebUpdate: true
-    Recursive: true
-    Patterns:
-      - '*.md'
-      - '*.html'
+  - 'Name': 'CzurDoc'
+    'Path': 'C:\Users\mille\Documents\CzurDoc\sources'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': true
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
+
+# --- HYBRID / WEB ARCHIVES (Fixed Taxonomy) ---
+  - 'Name': 'MakeMeASammich'
+    'Path': 'H:\MakeMeASammich\website\docs\recipes'
+    'Role': 'Hybrid_Archive'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'RootType': 'Recipes'
+    'SitePath': 'H:\MakeMeASammich\website'
+    'Template': 'recipe-card'
+    'Overwrite': false
+    'PurgeOrphan': false
+    'AutoStart': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
