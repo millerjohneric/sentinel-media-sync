@@ -1,10 +1,11 @@
 # ==============================================================================
-# Sentinel Media Sync v16.7 [THE GEEK FINAL]
+# Sentinel Media Sync v17.0 [THE GEEK ULTIMATE]
 # ==============================================================================
-# Updates: Fixed Phase 3 variable initialization ($ProcessedLocs).
-#          Added Archive-Only Junk Purge (Phase 4).
-#          Full "Wipe & Report" across all four phases.
-# ==============================================================================
+
+# --- IMPORT CORE LIBRARY (STRICT SCOPE) ---
+$CoreFile = Join-Path $PSScriptRoot "Sentinel-Core.ps1"
+if (Test-Path $CoreFile) { . $CoreFile } else { Write-Error "Core Missing: $CoreFile"; exit }
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 Set-Location -Path $PSScriptRoot -ErrorAction SilentlyContinue
@@ -12,23 +13,15 @@ Set-Location -Path $PSScriptRoot -ErrorAction SilentlyContinue
 if (-not (Get-Module -ListAvailable powershell-yaml)) { Install-Module -Name powershell-yaml -Scope CurrentUser -Force }
 Import-Module powershell-yaml
 
-$globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-
 # --- CONFIG & LOGGING ---
 $ConfigFilePath = Join-Path $PSScriptRoot 'config.yml'
-$YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
-
-$ConfigLogDir = $YamlData.Settings.LogPath
+$script:YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
+$ConfigLogDir = $script:YamlData.Settings.LogPath
 if (-not (Test-Path $ConfigLogDir)) { New-Item $ConfigLogDir -ItemType Directory -Force | Out-Null }
 $LogFile = Join-Path $ConfigLogDir 'Sentinel_Media_Sync.log'
-
-if (Test-Path $LogFile) {
-    if ((Get-Item $LogFile).Length / 1MB -gt 10) {
-        $Timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-        Rename-Item -Path $LogFile -NewName "MediaSync_$Timestamp.log" -Force
-    }
-}
 Start-Transcript -Path $LogFile -Append
+
+$globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 # --- DATA CLASS ---
 class SentinelLocation {
@@ -42,23 +35,14 @@ class SentinelLocation {
     }
 }
 
-$Locations = $YamlData.Locations | ForEach-Object { [SentinelLocation]::new($_) }
+$Locations = $script:YamlData.Locations | ForEach-Object { [SentinelLocation]::new($_) }
 $ActiveLocs = $Locations | Where-Object { $_.Enabled }
 $lookupTable = @{}; $stats = [PSCustomObject]@{ Scanned=0; Moved=0; AtHome=0; Purged=0; Errors=0 }
-$DryRun = $YamlData.Settings.DryRun; $ExifTool = $YamlData.SystemSettings.ExifToolPath
-$SafeWidth = if ($Host.UI.RawUI.WindowSize.Width -gt 0) { $Host.UI.RawUI.WindowSize.Width - 5 } else { 110 }
+$DryRun = $script:YamlData.Settings.DryRun
+$RawWidth = if ($Host.UI.RawUI.WindowSize.Width -gt 0) { $Host.UI.RawUI.WindowSize.Width } else { 120 }
+$SafeWidth = if ($RawWidth -lt 80) { 80 } else { $RawWidth - 5 }
 
 # --- HELPERS ---
-function Write-SentinelOdometer {
-    param($Tag, $Source, $Path)
-    $CleanPath = if ($Path.Length -gt ($SafeWidth - 35)) { '...' + $Path.Substring($Path.Length - ($SafeWidth - 38)) } else { $Path }
-    Write-Host ("`r  >> [{0,-8}] [{1,-12}] {2}" -f $Tag, $Source, $CleanPath).PadRight($SafeWidth) -NoNewline -ForegroundColor Gray
-}
-
-function Clear-SentinelOdometer {
-    Write-Host ("`r" + (" " * $SafeWidth) + "`r") -NoNewline
-}
-
 function Get-MediaDate {
     param($file)
     if ($file.Name -match '(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})') {
@@ -67,170 +51,206 @@ function Get-MediaDate {
     return $file.CreationTime
 }
 
-# --- SECRETS & EMAIL ---
+# --- SECRETS ---
 $SecretsPath = Join-Path $PSScriptRoot '.secure\email-settings.ps1'
 if (Test-Path $SecretsPath) { . $SecretsPath }
 
-function Send-SentinelReport {
-    param($ReportBody)
-    if (-not $YamlData.EmailSettings.Enabled) { return }
-    $SecPass = ConvertTo-SecureString $AppPassword -AsPlainText -Force
-    $Creds = New-Object System.Management.Automation.PSCredential($GmailUser, $SecPass)
-    $MailArgs = @{
-        To = $YamlData.EmailSettings.To; From = $GmailUser
-        Subject = "Sentinel Sync Report: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
-        Body = $ReportBody; SmtpServer = 'smtp.gmail.com'; Port = 587; Credentials = $Creds; EnableSsl = $true
-    }
-    try { Send-MailMessage @MailArgs; Write-Host "`n[EMAIL] Success!" -ForegroundColor Green }
-    catch { Write-Host "`n[EMAIL] FAILED: $($_.Exception.Message)" -ForegroundColor Red }
-}
-
 # --- PHASE 0: MASTER PLAN ---
-Write-Host "`nPHASE 0: Path Readiness (DryRun=$DryRun)..." -ForegroundColor White
-Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
-Write-Host '     STATUS      NAME                ROLE                PATH'
+# Call the new helper from the library
+$SafeWidth = Get-SentinelWidth
 
-foreach ($loc in $Locations) {
-    $IsOnline = Test-Path $loc.Path
-    $StatusStr = if (-not $IsOnline) { '[OFFLINE ]' } elseif ($loc.Enabled) { '[ACTIVE  ]' } else { '[SINK    ]' }
-    $StatusColor = if (-not $IsOnline) { 'Red' } else { 'Green' }
-    $RoleColor = switch -regex ($loc.Role) { 'Hybrid' {'Red'} 'Photo' {'Yellow'} 'RAW' {'Cyan'} 'Video|Audio' {'Magenta'} 'Pickup' {'Gray'} Default {'White'} }
-    Write-Host '     ' -NoNewline
-    Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
-    Write-Host " [$($loc.Name.PadRight(16))] [$($loc.Role.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
-    Write-Host $loc.Path -ForegroundColor Gray
-}
-Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
+Write-Host "`nPHASE 0: Path Readiness (DryRun=$DryRun)..." -ForegroundColor White
+
+# Ensure the multiplier is never less than 1
+$DashCount = if ($SafeWidth -gt 10) { $SafeWidth - 5 } else { 80 }
+$Divider = '   + ' + ('-' * $DashCount)
+
+Write-Host $Divider
+Write-SentinelPhase0 -Locations $Locations
+Write-Host $Divider
 
 # --- PHASE 1: MAPPING ---
 Write-Host "`nPHASE 1: MAPPING MEDIA..." -ForegroundColor Cyan
-$MediaExts = $YamlData.FileTypes.Images + $YamlData.FileTypes.RAWs + $YamlData.FileTypes.Videos
+$inv = @{ Img=0; RAW=0; Vid=0; Aud=0; Side=0 }
+$ImgExts = $script:YamlData.FileTypes.Images; $RawExts = $script:YamlData.FileTypes.RAWs
+$VidExts = $script:YamlData.FileTypes.Videos; $AudExts = $script:YamlData.FileTypes.Audio
+$MediaExts = $ImgExts + $RawExts + $VidExts + $AudExts + '.xmp'
+
 foreach ($loc in $ActiveLocs) {
     if (-not (Test-Path $loc.Path)) { continue }
-    $allFiles = Get-ChildItem -Path $loc.Path -File -Recurse:($loc.Depth -gt 1) | Where-Object { $MediaExts -contains $_.Extension.ToLower() }
+    $allFiles = Get-ChildItem -Path $loc.Path -File -Recurse:($loc.Depth -gt 1)
     foreach ($file in $allFiles) {
+        $ext = $file.Extension.ToLower()
+        if ($MediaExts -notcontains $ext) { continue }
         Write-SentinelOdometer -Tag 'SCAN' -Source $loc.Name -Path $file.Name
+        if ($ImgExts -contains $ext) { $inv.Img++ }
+        elseif ($RawExts -contains $ext) { $inv.RAW++ }
+        elseif ($VidExts -contains $ext) { $inv.Vid++ }
+        elseif ($AudExts -contains $ext) { $inv.Aud++ }
+        elseif ($ext -eq '.xmp') { $inv.Side++ }
         $fileKey = "$($file.Length)_$($file.Name)"
         if (-not $lookupTable.ContainsKey($fileKey)) { $lookupTable[$fileKey] = New-Object System.Collections.Generic.List[System.IO.FileInfo] }
         $lookupTable[$fileKey].Add($file); $stats.Scanned++
     }
 }
 Clear-SentinelOdometer
-Write-Host "  >> [SCAN    ] SUCCESS: $($stats.Scanned) items indexed." -ForegroundColor Green
+$F_Img = Format-SentinelNum $inv.Img
+$F_Raw = Format-SentinelNum $inv.RAW
+$F_Vid = Format-SentinelNum $inv.Vid
+$F_Aud = Format-SentinelNum $inv.Aud
+$F_Side = Format-SentinelNum $inv.Side
+Write-Host "  >> [SCAN    ] SUCCESS: Images: $F_Img | RAWs: $F_Raw | Videos: $F_Vid | Audio: $F_Aud | Sidecars: $F_Side" -ForegroundColor Gray
 
 # --- PHASE 2: ROUTING ---
 Write-Host "`nPHASE 2: ROUTING MEDIA..." -ForegroundColor White
-$MoveLog = New-Object System.Collections.Generic.List[PSCustomObject]
-$LastDir = ''
+$p2Counter = 0; $TotalGroups = $lookupTable.Count; $LastDir = ''
+$p2Inv = @{ Img=0; RAW=0; Vid=0; Aud=0; Side=0 }
+
 foreach ($key in $lookupTable.Keys) {
-    $group = $lookupTable[$key]; $master = $group[0]
+    $p2Counter++; $group = $lookupTable[$key]; $master = $group[0]
+    $ext = $master.Extension.ToLower()
     $origin = $ActiveLocs | Where-Object { $master.FullName.StartsWith($_.Path) } | Select-Object -First 1
+
     if ($null -eq $origin -or ($origin.Role -match 'Web|Hybrid' -and $origin.Role -ne 'InPlace_Archive')) { continue }
 
     if ($master.DirectoryName -ne $LastDir) {
-        Write-SentinelOdometer -Tag 'ROUTING' -Source $origin.Name -Path $master.DirectoryName
+        Write-SentinelOdometer -Tag 'ROUTING' -Source $origin.Name -Path $master.DirectoryName -Current $p2Counter -Total $TotalGroups
         $LastDir = $master.DirectoryName
-        Start-Sleep -Milliseconds 10
     }
 
     $mDate = Get-MediaDate -file $master
     $datePath = Join-Path $mDate.ToString('yyyy') $mDate.ToString('MM MMMM')
 
     if ($origin.Role -eq 'InPlace_Archive') {
-        $Rel = $master.FullName.Replace($origin.Path, '').TrimStart('\')
-        $Parts = $Rel -split '\\'
+        $Rel = $master.FullName.Replace($origin.Path, '').TrimStart('\'); $Parts = $Rel -split '\\'
         $targetRoot = if ($Parts.Count -ge 2) { Join-Path $origin.Path (Join-Path $Parts[0] $Parts[1]) } else { $master.DirectoryName }
         if ($master.DirectoryName -match '\\\d{4}\\\d{2}\s\w+$') { $stats.AtHome++; continue }
     } else {
-        $RoleType = if ($YamlData.FileTypes.RAWs -contains $master.Extension.ToLower()) { 'RAW_Archive' } else { 'Photo_Archive' }
+        $RoleType = if ($RawExts -contains $ext) { 'RAW_Archive' } else { 'Photo_Archive' }
         $targetRoot = ($ActiveLocs | Where-Object { $_.Role -eq $RoleType } | Select-Object -First 1).Path
     }
 
     if ($targetRoot) {
         $finalPath = Join-Path $targetRoot $datePath
-        Write-SentinelOdometer -Tag 'MOVE' -Source $origin.Name -Path "$($master.Directory.Name)\$($master.Name)"
         if (-not $DryRun) {
             if (-not (Test-Path $finalPath)) { New-Item $finalPath -ItemType Directory -Force | Out-Null }
             try {
                 Move-Item $master.FullName $finalPath -Force -ErrorAction Stop
-                $stats.Moved++; $MoveLog.Add([PSCustomObject]@{ File=$master.Name; Source=$origin.Name; Status='MOVED' })
+                $stats.Moved++
+                if ($ImgExts -contains $ext) { $p2Inv.Img++ }
+                elseif ($RawExts -contains $ext) { $p2Inv.RAW++ }
+                elseif ($VidExts -contains $ext) { $p2Inv.Vid++ }
+                elseif ($AudExts -contains $ext) { $p2Inv.Aud++ }
+                elseif ($ext -eq '.xmp') { $p2Inv.Side++ }
             } catch { $stats.Errors++ }
         }
     }
 }
 Clear-SentinelOdometer
-Write-Host "  >> [ROUTING ] SUCCESS: $($stats.Moved) items routed to Archive structure." -ForegroundColor Green
-if ($MoveLog.Count -gt 0) { $MoveLog | Format-Table -AutoSize }
+$F_Img = Format-SentinelNum $inv.Img
+$F_Raw = Format-SentinelNum $inv.RAW
+$F_Vid = Format-SentinelNum $inv.Vid
+$F_Aud = Format-SentinelNum $inv.Aud
+$F_Side = Format-SentinelNum $inv.Side
+Write-Host "  >> [SCAN    ] SUCCESS: Images: $F_Img | RAWs: $F_Raw | Videos: $F_Vid | Audio: $F_Aud | Sidecars: $F_Side" -ForegroundColor Gray
 
-# --- PHASE 3: REUNITING SIDECARS (ARCHIVE ONLY) ---
-Write-Host "`nPHASE 3: REUNITING SIDECARS..." -ForegroundColor Cyan
-$SidecarLog = New-Object System.Collections.Generic.List[PSCustomObject]
-$ProcessedLocs = New-Object System.Collections.Generic.List[string]
+# --- PHASE 3: REUNITING & ORPHAN CHECK ---
+if ($script:YamlData.'Settings'.'DisableSidecarReunite' -eq $true) {
+    Write-Host "`nPHASE 3: REUNITING SIDECARS (DISABLED via Config)" -ForegroundColor Yellow
+} else {
+    Write-Host "`nPHASE 3: REUNITING SIDECARS..." -ForegroundColor Cyan
+    $p3Counter = 0
+    $p3Inv = @{ 'Reunited'=0; 'Purged'=0 }
+    $TotalDirs = 0
 
-foreach ($loc in $ActiveLocs) {
-    if ($loc.Role -notmatch 'Archive') { continue }
-    if (-not (Test-Path $loc.Path)) { continue }
-    $ProcessedLocs.Add($loc.Name)
+    # Calculate denominator for odometer
+    foreach ($loc in $ActiveLocs) {
+        if ($loc.Role -match 'Archive' -and (Test-Path $loc.Path)) {
+            $TotalDirs += (Get-ChildItem $loc.Path -Recurse -Directory).Count
+        }
+    }
 
-    Get-ChildItem $loc.Path -Recurse -Directory | ForEach-Object {
-        $CurrentDir = $_.FullName
-        Write-SentinelOdometer -Tag 'REUNITE' -Source $loc.Name -Path $CurrentDir
-        $Sidecars = Get-ChildItem $CurrentDir -File -Filter *.xmp
-        foreach ($s in $Sidecars) {
-            $Buddy = Get-ChildItem $loc.Path -Recurse -File | Where-Object { $_.BaseName -eq $s.BaseName -and $_.Extension -ne '.xmp' } | Select-Object -First 1
-            if ($Buddy -and $s.DirectoryName -ne $Buddy.DirectoryName) {
-                Write-SentinelOdometer -Tag 'REUNITE' -Source $loc.Name -Path "$($Buddy.Directory.Name)\$($s.Name)"
-                if (-not $DryRun) {
-                    try {
-                        Move-Item $s.FullName $Buddy.DirectoryName -Force -ErrorAction Stop
-                        $SidecarLog.Add([PSCustomObject]@{ File=$s.Name; Location=$loc.Name; Status='REUNITED' })
-                    } catch { $stats.Errors++ }
+    foreach ($loc in $ActiveLocs) {
+        if ($loc.Role -notmatch 'Archive' -or -not (Test-Path $loc.Path)) { continue }
+
+        Get-ChildItem $loc.Path -Recurse -Directory | ForEach-Object {
+            $p3Counter++
+            $CurrentDir = $_.FullName
+            Write-SentinelOdometer -Tag 'REUNITE' -Source $loc.Name -Path $CurrentDir -Current $p3Counter -Total $TotalDirs
+
+            $Sidecars = Get-ChildItem $CurrentDir -File -Filter *.xmp
+            foreach ($s in $Sidecars) {
+                $Buddy = Get-SentinelBuddy -Sidecar $s -SearchRoot $loc.Path
+
+                if ($Buddy) {
+                    # REUNITE: Found parent media in a different folder
+                    if ($s.DirectoryName -ne $Buddy.DirectoryName -and -not $DryRun) {
+                        try {
+                            Move-Item $s.FullName $Buddy.DirectoryName -Force -ErrorAction Stop
+                            $p3Inv.'Reunited'++
+                        } catch { $stats.Errors++ }
+                    }
+                } elseif ($loc.PurgeOrphan -eq $true) {
+                    # PURGE: No parent found and PurgeOrphan is enabled for this location
+                    if (-not $DryRun) {
+                        try {
+                            Remove-Item $s.FullName -Force -ErrorAction Stop
+                            $p3Inv.'Purged'++
+                        } catch { $stats.Errors++ }
+                    }
                 }
             }
         }
     }
+    Clear-SentinelOdometer
+    Write-Host "  >> [REUNITE ] SUCCESS: " -NoNewline -ForegroundColor Green
+    Write-Host "Reunited: $($p3Inv.'Reunited') | Purged Orphans: $($p3Inv.'Purged')" -ForegroundColor Gray
 }
-Clear-SentinelOdometer
-Write-Host "  >> [REUNITE ] SUCCESS: Scanned Archives: $($ProcessedLocs -join ', ')" -ForegroundColor Green
-if ($SidecarLog.Count -gt 0) { $SidecarLog | Format-Table -AutoSize }
 
-# --- PHASE 4: JUNK PURGE (ARCHIVE ONLY) ---
-Write-Host "`nPHASE 4: JUNK PURGE..." -ForegroundColor Red
-$PurgeLog = New-Object System.Collections.Generic.List[PSCustomObject]
-$JunkExts = $YamlData.FileTypes.Junk
+# --- PHASE 4: JUNK PURGE ---
+if ($script:YamlData.'Settings'.'DisableJunkPurge' -eq $true) {
+    Write-Host "`nPHASE 4: JUNK PURGE (DISABLED via Config)" -ForegroundColor Yellow
+} else {
+    Write-Host "`nPHASE 4: JUNK PURGE..." -ForegroundColor Red
+    $p4Counter = 0; $p4Purged = 0
+    $JunkExts = $script:YamlData.'FileTypes'.'Junk'
+    $PurgeLocs = $ActiveLocs | Where-Object { $_.Role -match 'Archive' }
+    $TotalFilesToPurge = 0
+    foreach ($pl in $PurgeLocs) { if (Test-Path $pl.Path) { $TotalFilesToPurge += (Get-ChildItem $pl.Path -Recurse -File).Count } }
 
-foreach ($loc in $ActiveLocs) {
-    if ($loc.Role -notmatch 'Archive') { continue }
-    if (-not (Test-Path $loc.Path)) { continue }
-
-    Get-ChildItem $loc.Path -Recurse -File | ForEach-Object {
-        $file = $_
-        Write-SentinelOdometer -Tag 'JUNK' -Source $loc.Name -Path $file.FullName
-        if ($JunkExts -contains $file.Extension.ToLower()) {
-            $PurgeLog.Add([PSCustomObject]@{ File=$file.Name; Location=$loc.Name; Status='PURGED' })
-            if (-not $DryRun) {
-                try { Remove-Item $file.FullName -Force -ErrorAction Stop; $stats.Purged++ }
-                catch { $stats.Errors++ }
+    foreach ($loc in $PurgeLocs) {
+        if (-not (Test-Path $loc.Path)) { continue }
+        Get-ChildItem $loc.Path -Recurse -File | ForEach-Object {
+            $p4Counter++; $file = $_
+            Write-SentinelOdometer -Tag 'PURGE' -Source $loc.Name -Path $file.Name -Current $p4Counter -Total $TotalFilesToPurge
+            if ($JunkExts -contains $file.Extension.ToLower() -and -not $DryRun) {
+                try { Remove-Item $file.FullName -Force -ErrorAction Stop; $p4Purged++; $stats.Purged++ } catch { $stats.Errors++ }
             }
         }
     }
+    Clear-SentinelOdometer
+    Write-Host "  >> [PURGE   ] SUCCESS: Purged $(Format-SentinelNum $p4Purged) Junk Files." -ForegroundColor Gray
 }
-Clear-SentinelOdometer
-Write-Host "  >> [JUNK    ] SUCCESS: $($stats.Purged) junk files removed from Archives." -ForegroundColor Green
-if ($PurgeLog.Count -gt 0) { $PurgeLog | Format-Table -AutoSize }
 
 # --- MISSION REPORT ---
+$S3Status = if ($script:YamlData.'Settings'.'DisableSidecarReunite') { "DISABLED" } else { "COMPLETE" }
+$S4Status = if ($script:YamlData.'Settings'.'DisableJunkPurge') { "DISABLED" } else { "COMPLETE" }
+
 $Report = @"
 Sentinel Sync Mission Report
 ----------------------------------
-Total Scanned:  $($stats.Scanned)
-Items Moved:    $($stats.Moved)
-Already Home:   $($stats.AtHome)
-Purged Files:   $($stats.Purged)
-Errors:         $($stats.Errors)
+Phase 3 (Sidecars): $S3Status
+Phase 4 (Junk):     $S4Status
+----------------------------------
+Total Scanned:  $(Format-SentinelNum $stats.Scanned)
+Items Moved:    $(Format-SentinelNum $stats.Moved)
+Already Home:   $(Format-SentinelNum $stats.AtHome)
+Purged Files:   $(Format-SentinelNum $stats.Purged)
+Errors:         $(Format-SentinelNum $stats.Errors)
 ----------------------------------
 Duration: $($globalStopwatch.Elapsed.ToString('hh\:mm\:ss'))
 "@
+
 Write-Host "`n$Report" -ForegroundColor Gray
-Send-SentinelReport -ReportBody $Report
+Send-SentinelReport -ReportBody $Report -JobName "Sync"
 Stop-Transcript

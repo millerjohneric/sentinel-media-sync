@@ -4,12 +4,15 @@
   'EmailSettings':
     'Enabled': true
     'To': 'millerjohneric@gmail.com'
+    'CredPath': '.secure\gmail.cred'
   'DefaultYear': 2026
   'DateFormat': '%Y/%m Month'
   'ChronoRegex': '^\d{4}/\d{2}\s\w+$'
   'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\\])*[a-zA-Z0-9_\-\s]+$'
   'TemplateDir': 'H:\MakeMeASammich\website\templates'
   'PurgeTransient': true
+  'DisableSidecarReunite': true
+  'DisableJunkPurge': true
   'Exclusions':
     - '.webaxs'
     - '$RECYCLE.BIN'
@@ -43,7 +46,7 @@
     'MonitorDepth': 1
     'SortDepth': 1
     'RootType': 'Photos'
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'Structure':
       - 'Chrono'
 
@@ -52,7 +55,7 @@
     'Role': 'RAW_Archive'
     'MonitorDepth': 1
     'SortDepth': 1
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'RootType': 'RAW'
     'Structure':
       - 'Chrono'
@@ -62,8 +65,18 @@
     'Path': 'W:\ExcessPhotos'
     'Role': 'InPlace_Archive'
     'MonitorDepth': 2
-    'PurgeOrphan': true
-    'RootType': 'RAW'
+    'PurgeOrphan': false
+    'RootType': 'Hybrid'
+    'Structure':
+      - 'Chrono'
+      - 'Event'
+
+  - 'Name': 'PhotoGroups'
+    'Path': 'H:\PhotoGroups'
+    'Role': 'InPlace_Archive'
+    'MonitorDepth': 2
+    'PurgeOrphan': false
+    'RootType': 'Hybrid'
     'Structure':
       - 'Chrono'
       - 'Event'
@@ -74,7 +87,7 @@
     'Role': 'Video_Archive'
     'MonitorDepth': 0
     'SortDepth': 1
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'RootType': 'Videos'
     'Structure':
       - 'Chrono'
@@ -84,7 +97,7 @@
     'Role': 'Audio_Archive'
     'MonitorDepth': 0
     'SortDepth': 1
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'RootType': 'Audio'
     'Structure':
       - 'Chrono'
@@ -95,7 +108,7 @@
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'Scope': 'Global'
     'Structure':
       - 'Chrono'
@@ -105,7 +118,7 @@
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'Scope': 'Global'
     'Structure':
       - 'Chrono'
@@ -115,7 +128,7 @@
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'Scope': 'Global'
     'Structure':
       - 'Chrono'
@@ -125,7 +138,7 @@
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
-    'PurgeOrphan': true
+    'PurgeOrphan': false
     'Scope': 'Global'
     'Structure':
       - 'Chrono'
