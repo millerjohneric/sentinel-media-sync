@@ -1,0 +1,6 @@
+﻿label: 'Recipes 🍔'
+title: 'Our Family Recipes 🍔'
+link:
+  type: generated-index
+  slug: recipes
+  description: 'A collection of our favorite snacks, dips, and starters.'

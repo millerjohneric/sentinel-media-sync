@@ -1,6 +1,8 @@
 'Settings':
-  'LogPath': 'H:\sentinel-media-sync\-log\'
+  'LogPath': '-log'
+  'TemplateDir': 'H:\sentinel-media-sync\templates'
   'DryRun': false
+  'Overwrite': true
   'EmailSettings':
     'Enabled': true
     'To': 'millerjohneric@gmail.com'
@@ -9,7 +11,6 @@
   'DateFormat': '%Y/%m Month'
   'ChronoRegex': '^\d{4}/\d{2}\s\w+$'
   'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\\])*[a-zA-Z0-9_\-\s]+$'
-  'TemplateDir': 'H:\MakeMeASammich\website\templates'
   'PurgeTransient': true
   'DisableSidecarReunite': true
   'DisableJunkPurge': true
@@ -152,7 +153,7 @@
     'RootType': 'Recipes'
     'SitePath': 'H:\MakeMeASammich\website'
     'Template': 'recipe-card'
-    'Overwrite': false
+    'Overwrite': true
     'PurgeOrphan': false
     'AutoStart': true
     'GroupSeparator': '-.-'

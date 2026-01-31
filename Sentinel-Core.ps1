@@ -28,21 +28,23 @@ function Get-SentinelRoleColor {
 }
 
 # --- UI DISPLAY FUNCTIONS ---
-
 function Write-SentinelPhase0 {
     param($Locations)
     Write-Host '     STATUS      NAME                ROLE                PATH'
     foreach ($loc in $Locations) {
         $IsOnline = Test-Path $loc.Path
-        $IsActive = $loc.Enabled
-        $StatusStr = if (-not $IsOnline) { '[OFFLINE ]' } elseif ($IsActive) { '[ACTIVE  ]' } else { '[SKIP    ]' }
-        $StatusColor = if (-not $IsOnline) { 'Red' } elseif ($IsActive) { 'Green' } else { 'DarkGray' }
-        $RoleColor = if (-not $IsActive) { 'DarkGray' } else { Get-SentinelRoleColor -Role $loc.Role }
 
-        Write-Host '     ' -NoNewline
-        Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
-        Write-Host " [$($loc.Name.PadRight(16))] [$($loc.Role.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
-        Write-Host $loc.Path -ForegroundColor Gray
+        # GEEK FIX: If 'Enabled' isn't in YAML, assume True.
+        # But if it's a Hybrid_Archive, we mark it as [READY]
+        $StatusStr = if (-not $IsOnline) { '[OFFLINE ]' }
+                     elseif ($loc.Role -eq 'Hybrid_Archive') { '[READY   ]' }
+                     else { '[SKIP    ]' }
+
+        $Name = "[$($loc.Name.PadRight(15))]"
+        $Role = "[$($loc.Role.PadRight(18))]"
+        $Path = $loc.Path
+
+        Write-Host "     $StatusStr  $Name $Role $Path"
     }
 }
 
@@ -169,17 +171,59 @@ function Get-SentinelBuddy {
 # --- WEB GENERATION & TEMPLATE ENGINE ---
 
 function Build-WebPageFromTemplate {
-    param([System.IO.FileInfo]$SourceFile, [string]$TargetFolder, [string]$TemplateType, [bool]$Overwrite)
+    param(
+        [Parameter(Mandatory=$true)]
+        [System.IO.FileInfo]$SourceFile,
+
+        [Parameter(Mandatory=$true)]
+        [string]$TargetFolder,
+
+        [Parameter(Mandatory=$true)]
+        [string]$TemplateType,
+
+        [Parameter(Mandatory=$true)]
+        [bool]$Overwrite
+    )
+
+    # Ensure the destination exists
     if (-not (Test-Path $TargetFolder)) { New-Item $TargetFolder -ItemType Directory -Force | Out-Null }
-    $TargetPath = Join-Path $TargetFolder ($SourceFile.BaseName + ".md")
-    if ((Test-Path $TargetPath) -and (-not $Overwrite)) { return 'SKIPPED' }
+
+    $TargetFileName = $SourceFile.BaseName + '.md'
+    $TargetPath = Join-Path $TargetFolder $TargetFileName
+
+    # Skip logic
+    if ((Test-Path $TargetPath) -and (-not $Overwrite)) {
+        return 'SKIPPED'
+    }
+
     try {
-        $Content = Get-Content $SourceFile.FullName -Raw
-        $DateStr = Get-Date -Format "yyyy-MM-dd"
-        $FrontMatter = "---\ntitle: `"$($SourceFile.BaseName -replace '-', ' ')`"\ndate: $DateStr\ntemplate: $TemplateType\n---\n"
-        ($FrontMatter + "`n" + $Content) | Set-Content -Path $TargetPath -Force
+        # Using your updated absolute path from YAML
+        $TemplateDir = $script:YamlData.'Settings'.'TemplateDir'
+
+        # Ensure we are looking for a .md file
+        $CleanTemplate = if ($TemplateType -match '\.md$') { $TemplateType } else { "$TemplateType.md" }
+        $TemplatePath = Join-Path $TemplateDir $CleanTemplate
+
+        if (-not (Test-Path $TemplatePath)) {
+            return 'ERROR'
+        }
+
+        # Read the recipe-card.md
+        $TemplateContent = Get-Content $TemplatePath -Raw
+
+        # Perform replacements
+        $Output = $TemplateContent.Replace('{{title}}', ($SourceFile.BaseName -replace '-', ' '))
+        $Output = $Output.Replace('{{slug}}', $SourceFile.BaseName.ToLower())
+        $Output = $Output.Replace('{{primary_image}}', "![[$($SourceFile.Name)]]")
+
+        # Write out the new markdown file
+        $Output.Trim() | Set-Content -Path $TargetPath -Force -Encoding UTF8
+
         return 'CREATED'
-    } catch { return 'ERROR' }
+    }
+    catch {
+        return 'ERROR'
+    }
 }
 
 function AutoStartWebSite {

@@ -21,8 +21,7 @@ Set-Location -Path $PSScriptRoot -ErrorAction SilentlyContinue
 if (-not (Get-Module -ListAvailable powershell-yaml)) { Install-Module -Name powershell-yaml -Scope CurrentUser -Force }
 Import-Module powershell-yaml
 
-# --- IMPORT CORE & SECRETS ---
-. "$PSScriptRoot\Sentinel-Core.ps1"
+# --- IMPORT CORE & SECRETS ---"
 $SecretsPath = Join-Path $PSScriptRoot '.secure\email-settings.ps1'
 if (Test-Path $SecretsPath) { . $SecretsPath }
 
@@ -52,30 +51,26 @@ Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
 $LocObjects = $YamlData.Locations | ForEach-Object { [PSCustomObject]$_ }
 Write-SentinelPhase0 -Locations $LocObjects -IsWebGen $true
 Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
-# --- PHASE 1: GENERATE ---
-Write-Host "`nPHASE 1: GENERATING WEB CONTENT..." -ForegroundColor Cyan
 
-$TotalFiles = 0
+
+# --- PHASE 1: GENERATING WEB CONTENT ---
 foreach ($loc in $WebLocations) {
-    if (Test-Path $loc.Path) { $TotalFiles += (Get-ChildItem $loc.Path -Recurse -File | Where-Object { $_.Name -notmatch 'index.md|_category_.yml' }).Count }
-}
+    if ($loc.Role -ne 'Hybrid_Archive') { continue }
 
-foreach ($loc in $WebLocations) {
-    if (-not (Test-Path $loc.Path)) { continue }
-    if ($loc.AutoStart -eq $true) { $TargetSitePath = $loc.SitePath }
+    $ImgExts = $YamlData.'FileTypes'.'Images'
+    $SourceFiles = Get-ChildItem -Path $loc.Path -File -Recurse | Where-Object { $_.Extension -in $ImgExts }
+    $DocTarget = Join-Path $loc.SitePath 'docs\recipes'
+    $EffectiveOverwrite = if ($null -ne $loc.Overwrite) { $loc.Overwrite } else { $GlobalOverwrite }
 
-    $DocTarget = Join-Path $loc.SitePath (Join-Path "docs" $loc.Name)
-
-    Get-ChildItem $loc.Path -Recurse -File | Where-Object { $_.Name -notmatch 'index.md|_category_.yml' } | ForEach-Object {
-        $file = $_
+    foreach ($file in $SourceFiles) {
         $stats.Scanned++
-        Write-SentinelOdometer -Tag 'PROCESS' -Source $loc.Name -Path $file.Name -Current $stats.Scanned -Total $TotalFiles
+        Write-SentinelOdometer -Tag 'PROCESS' -Source $loc.Name -Path $file.Name -Current $stats.Scanned -Total $SourceFiles.Count
 
         $Result = Build-WebPageFromTemplate `
             -SourceFile $file `
             -TargetFolder $DocTarget `
             -TemplateType $loc.Template `
-            -Overwrite $GlobalOverwrite
+            -Overwrite $EffectiveOverwrite
 
         switch ($Result) {
             'CREATED' { $stats.Created++ }
@@ -83,16 +78,17 @@ foreach ($loc in $WebLocations) {
             'SKIPPED' { $stats.Skipped++ }
             'ERROR'   { $stats.Errors++ }
         }
-
-        if ($Result -ne 'SKIPPED') {
-            $WebChangeLog.Add([PSCustomObject]@{ File=$file.Name; Source=$loc.Name; Action=$Result })
-        }
     }
 }
 
-Clear-SentinelOdometer
-Write-Host "  >> [PROCESS ] SUCCESS: " -NoNewline -ForegroundColor Green
-Write-Host "Generated $($stats.Created + $stats.Updated) pages from $($stats.Scanned) sources." -ForegroundColor Gray
+# --- PHASE 2: SITE LAUNCH ---
+if ($null -ne $TargetSitePath -and -not $DryRun -and ($stats.Created -gt 0 -or $stats.Errors -eq 0)) {
+    # Only launch if we haven't already called this in this session
+    if (-not $Global:SiteLaunched) {
+        AutoStartWebSite -Path $TargetSitePath
+        $Global:SiteLaunched = $true
+    }
+}
 
 # --- MISSION REPORT ---
 $Report = @"
@@ -109,5 +105,4 @@ Duration: $($globalStopwatch.Elapsed.ToString("hh\:mm\:ss"))
 Write-Host "`n$Report" -ForegroundColor Gray
 Send-SentinelReport -ReportBody $Report -JobName "Web Gen"
 
-if ($null -ne $TargetSitePath -and -not $DryRun) { AutoStartWebSite -Path $TargetSitePath }
 Stop-Transcript
