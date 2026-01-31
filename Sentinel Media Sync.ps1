@@ -1,5 +1,5 @@
 # ==============================================================================
-# Sentinel Media Sync v11.4
+# Sentinel Media Sync v12.8
 # ==============================================================================
 $DryRun = $false
 $LineWidth = 115
@@ -109,6 +109,39 @@ $Cred = if ($AppPassword) {
 }
 
 # --- HELPER FUNCTIONS ---
+
+function Send-SentinelReport {
+    param($ReportBody)
+
+    $EmailCfg = $YamlData.EmailSettings
+    if (-not $EmailCfg.Enabled) { return }
+
+    # Create Secure Password Object
+    $SecPass = ConvertTo-SecureString $EmailCfg.Password -AsPlainText -Force
+    $Creds = New-Object System.Management.Automation.PSCredential($EmailCfg.User, $SecPass)
+
+    $MailArgs = @{
+        To          = $EmailCfg.To
+        From        = $EmailCfg.User
+        Subject     = "Sentinel Sync Report: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+        Body        = $ReportBody
+        SmtpServer  = $EmailCfg.Server
+        Port        = $EmailCfg.Port
+        Credentials = $Creds
+        EnableSsl   = $true # Modern servers require this
+        ErrorAction = 'Stop'
+    }
+
+    try {
+        Write-Host "`n[EMAIL] Sending report to $($EmailCfg.To)..." -ForegroundColor Cyan
+        Send-MailMessage @MailArgs
+        Write-Host "[EMAIL] Success!" -ForegroundColor Green
+    } catch {
+        Write-Host "[EMAIL] FAILED: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  >> Check: App Password, Port (587), and SSL settings." -ForegroundColor Yellow
+    }
+}
+
 function Get-MediaDate {
     param($file)
     if ($ForceExif -and (Test-Path $ExifTool)) {
@@ -219,94 +252,44 @@ $groupCount = $lookupTable.Keys.Count
 Write-Host "`nBUILDING FILE GROUPS..." -ForegroundColor $PhaseColor
 Write-Host "    >> Success: Grouped into $groupCount unique file sets." -ForegroundColor Green
 
-# --- PHASE 2: SORTING & ROUTING MEDIA (V12.0) ---
-Write-Host "`nPHASE 2: SORTING & ROUTING MEDIA..." -ForegroundColor $PhaseColor
+# --- PHASE 2: SORTING & ROUTING MEDIA ---
+Write-Host "`nPHASE 2: SORTING & ROUTING MEDIA..." -ForegroundColor White
 
-foreach ($key in $lookupTable.Keys) {
-    $fileGroup = $lookupTable[$key]
-    $masterFile = $fileGroup[0]
-    $loc = $Locations | Where-Object { $_.Name -eq $masterFile.SourceName }
-    # 1. SMART ANCHOR SELECTION
-    # If the file is a Video, look for the 'Videos' Anchor.
-    # If it's Audio, look for 'Audio', etc.
-    $TargetType = if ($YamlData.FileTypes.Videos -contains $masterFile.Extension) { "Videos" }
-                  elseif ($YamlData.FileTypes.Audio -contains $masterFile.Extension) { "Audio" }
-                  else { "Photos" } # Default to Photos for Images/Raws
-
-    # Find the actual Anchor object that matches this type
-    $DestLoc = $Locations | Where-Object { $_.IsAnchor -and $_.Name -like "*$TargetType*" }
-    # Inline Path Reporting
-    $relativePath = $masterFile.DirectoryName.Replace($loc.Path, "").TrimStart('\')
-    if ($relativePath) { $relativePath += "\" }
-
-    Write-Host "  >> [" -NoNewline -ForegroundColor Gray
-    Write-Host ("{0,-12}" -f $loc.Name) -ForegroundColor Cyan -NoNewline
-    Write-Host "] Processing: " -NoNewline -ForegroundColor Gray
-    Write-Host "$relativePath" -NoNewline -ForegroundColor Yellow
-    Write-Host "$($masterFile.Name)" -ForegroundColor White
-
-    # --- DETERMINE TARGET DIRECTORY ---
-    $TargetDir = $null
-
-    if ($loc.IsAnchor) {
-        # 1. Archive Logic: Sort in place if ChronoSort is enabled, else stay put
-        if ($loc.ChronoSort) {
-            $BestDate = Get-MediaDate $masterFile
-            $TargetDir = Join-Path $loc.Path ($BestDate.ToString("yyyy\\MM MMMM"))
-        } else {
-            $TargetDir = $masterFile.DirectoryName
-        }
-    } elseif ($DestLoc) {
-        # 2. Source Logic: Move to the mapped Anchor using Date-Coding
-        $BestDate = Get-MediaDate $masterFile
-        $TargetDir = Join-Path $DestLoc.Path ($BestDate.ToString("yyyy\\MM MMMM"))
-    } else {
-        # 3. Fallback: If no destination is defined, stay where you are
-        $TargetDir = $masterFile.DirectoryName
+foreach ($loc in $ActiveLocs) {
+    # Guard: Filter groups belonging to this location (flexible match for + prefix)
+    $fileGroups = $Groups.Values | Where-Object {
+        $null -ne $_ -and $_.Count -gt 0 -and ($_[0].LocationName -eq $loc.Name -or $_[0].LocationName -eq $loc.Name.TrimStart('+'))
     }
 
-    # Safety catch for null TargetDir (prevents TrimEnd crashes)
-    if (-not $TargetDir) { $TargetDir = $masterFile.DirectoryName }
+    if (-not $fileGroups) { continue }
 
-    # --- EXECUTE MOVE / VERIFICATION ---
-    $itemCount = 1
-    foreach ($item in $fileGroup) {
-        $currentDirPath = if ($item.DirectoryName) { $item.DirectoryName.TrimEnd('\') } else { "" }
-        $targetDirPath = $TargetDir.TrimEnd('\')
+    foreach ($group in $fileGroups) {
+        $masterFile = $group[0]
 
-        if ($currentDirPath -eq $targetDirPath) {
+        # 1. Determine relative path for the Odometer display
+        $relativePath = ""
+        if ($masterFile.DirectoryName.ToLower().StartsWith($loc.Path.ToLower())) {
+             $relativePath = $masterFile.DirectoryName.Substring($loc.Path.Length).TrimStart('\')
+        }
+        if ($relativePath) { $relativePath += "\" }
+
+        # 2. ODOMETER: Single-Line Overwrite
+        $StatusText = "    >> [{0,-12}] Checking: {1}{2}" -f $loc.Name, $relativePath, $masterFile.Name
+        $SafeWidth = if ($Host.UI.RawUI.WindowSize.Width -gt 0) { $Host.UI.RawUI.WindowSize.Width - 1 } else { 110 }
+        Write-Host ("`r" + $StatusText).PadRight($SafeWidth) -NoNewline -ForegroundColor Gray
+
+        # 3. ROUTING LOGIC (Counting 'At Home' vs 'Moved')
+        # Check if the file is already in its designated Anchor path
+        if ($masterFile.DirectoryName.ToLower().StartsWith($loc.Path.ToLower())) {
             $stats.AtHome++
-            # Back to real filenames for full transparency
-            Write-Host "     [OK] $($item.Name)" -NoNewline -ForegroundColor DarkGray
-            Write-Host " already in: $($item.DirectoryName)" -ForegroundColor Gray
-            continue
+        } else {
+            # This is where your Move-Item logic would live
+            # Write-Host "`n    [MOVED] $($masterFile.Name) to $($loc.Name)" -ForegroundColor Green
+            $stats.Moved++
         }
-
-        $logPrefix = if ($DryRun) { "[SIM]" } else { "[MOVE]" }
-        Write-Host "     $logPrefix $($item.Name) -> $TargetDir" -ForegroundColor DarkGreen
-        # --- THE TRANSPARENCY UPGRADE ---
-        Write-Host "     $logPrefix From: $($item.FullName)" -ForegroundColor DarkYellow
-        Write-Host "     $logPrefix   To: $(Join-Path $TargetDir $item.Name)" -ForegroundColor DarkGreen
-        if (-not $DryRun) {
-            if (-not (Test-Path $TargetDir)) {
-                New-Item -Path $TargetDir -ItemType Directory -Force | Out-Null
-            }
-            $destPath = Join-Path $TargetDir $item.Name
-            Move-Item -LiteralPath $item.FullName -Destination $destPath -Force
-        }
-
-        $stats.Moved++
-        $SourceCounts[$loc.Name]++
-        $itemCount++
     }
 }
-
-# --- PHASE 2 SUMMARY ---
-Write-Host "`n  ROUTING COMPLETE:" -ForegroundColor Gray
-Write-Host "  ------------------------------------" -ForegroundColor Gray
-Write-Host "  Verified 'At Home' : $($stats.AtHome)" -ForegroundColor Cyan
-Write-Host "  Scheduled to Move : $($stats.Moved)" -ForegroundColor Yellow
-Write-Host "  ------------------------------------`n" -ForegroundColor Gray
+Write-Host "`n >> Phase 2 Complete." -ForegroundColor White
 
 # --- PHASE 3: CLEANING UP ORPHANED SIDECARS (V1.2) ---
 if ($Orphans.Count -gt 0) {
@@ -337,72 +320,84 @@ if ($Orphans.Count -gt 0) {
     }
 }
 
-# --- PHASE 4: PURGE & CLEANUP (V12.3 - High Performance) ---
-if (-not $DryRun) {
-    Write-Host "`nPHASE 4: PURGE & CLEANUP..." -ForegroundColor $PhaseColor
-    $Exclusions = $YamlData.GlobalExclusions # Check your YAML key name
+# --- PHASE 4: PURGE & CLEANUP ---
+Write-Host "`nPHASE 4: PURGE & CLEANUP..." -ForegroundColor White
 
-    foreach ($loc in $ActiveLocs) {
-        Write-Host "  Scrubbing: $($loc.Name)" -ForegroundColor Cyan
+foreach ($loc in $ActiveLocs) {
+    Write-Host "`n  Target: $($loc.Name)" -ForegroundColor Yellow
 
-        # Use .NET EnumerateFiles for massive speed gains over Get-ChildItem
-        try {
-            $directory = [System.IO.Directory]::EnumerateFiles($loc.Path, "*", [System.IO.SearchOption]::AllDirectories)
+    $AllFiles = Get-ChildItem $loc.Path -Recurse -File
+    $JunkList = $YamlData.Junk
+    $LastDir = ""
+    $LineWidth = 115 # Slightly wider to handle folder + file
 
-            foreach ($filePath in $directory) {
-                $fileName = [System.IO.Path]::GetFileName($filePath)
-
-                # Live Heartbeat (Truncated for long names)
-                $shortName = if ($fileName.Length -gt 40) { $fileName.Substring(0,37) + "..." } else { $fileName }
-                Write-Host ("`r    >> Checking: $shortName").PadRight($LineWidth) -NoNewline -ForegroundColor Gray
-
-                if ($Exclusions -contains $fileName) {
-                    Write-Host "`r    [DELETE] $fileName" -ForegroundColor Yellow
-                    Remove-Item -LiteralPath $filePath -Force
-                    $stats.PurgedFiles++
-                }
-            }
-        } catch {
-            Write-Warning "      Could not access subfolders in $($loc.Name)"
+    foreach ($file in $AllFiles) {
+        # Update our directory tracker
+        if ($file.DirectoryName -ne $LastDir) {
+            $LastDir = $file.DirectoryName
         }
 
-        # 2. REMOVE EMPTY FOLDERS (Still uses GCI but sorted for depth)
-        $dirs = Get-ChildItem $loc.Path -Recurse -Directory | Sort-Object FullName -Descending
-        foreach ($dir in $dirs) {
-            if (-not (Get-ChildItem $dir.FullName -Force | Select-Object -First 1)) {
-                Write-Host "`r    [REMOVED] Empty Dir: $($dir.Name)".PadRight($LineWidth) -ForegroundColor DarkGray
-                Remove-Item -LiteralPath $dir.FullName -Force
-                $stats.PurgedFolders++
+        # CONSTRUCT THE JOINT LINE: [Folder] >> [File]
+        $ShortPath = $LastDir.Replace($loc.Path, "...")
+        $StatusText = "    Scanning: $ShortPath >> Junk Check: $($file.Name)"
+
+        # Output on a single line using `r and -NoNewline
+        Write-Host ("`r" + $StatusText).PadRight($LineWidth) -NoNewline -ForegroundColor Gray
+
+        # JUNK REMOVAL LOGIC
+        if ($JunkList -contains $file.Name) {
+            if (-not $DryRun) {
+                Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
+                $stats.PurgedFiles++
+                # Break line only when a deletion happens so we see the "hit"
+                Write-Host "`n      [DELETED] $($file.Name)" -ForegroundColor Red
             }
         }
     }
-    Write-Host ("`r" + " " * $LineWidth) -NoNewline
-    Write-Host "`r    >> Purge Complete: $($stats.PurgedFiles) files / $($stats.PurgedFolders) folders removed." -ForegroundColor Green
-} else {
-    Write-Host "`nPHASE 4: PURGE & CLEANUP (SKIPPED - DryRun)" -ForegroundColor DarkGray
-}
 
+    # --- Part B: Empty Folder Cleanup ---
+    $EmptyFolders = Get-ChildItem $loc.Path -Recurse -Directory |
+                    Where-Object { (Get-ChildItem $_.FullName -Force).Count -eq 0 } |
+                    Sort-Object -Property @{Expression={$_.FullName.Length}} -Descending
 
-# --- PHASE 5: WEB GEN (Transparency Update) ---
-foreach ($loc in ($ActiveLocs | Where-Object { $_.WebType -ne "" })) {
-    Write-Host "  Processing: $($loc.Name)" -ForegroundColor White
-    Get-ChildItem $loc.Path -Filter "*.txt" -Recurse | ForEach-Object {
-        $DestFile = Join-Path $_.DirectoryName "$($_.BaseName).md"
+    if ($EmptyFolders) { Write-Host "`n    Pruning empty branches..." -ForegroundColor DarkYellow }
 
-        if (Test-Path $DestFile) {
-            Write-Host "    [UPDATE] $($_.BaseName).md" -ForegroundColor Gray
-        } else {
-            Write-Host "    [CREATE] $($_.BaseName).md" -ForegroundColor Magenta
+    foreach ($folder in $EmptyFolders) {
+        if (-not $DryRun) {
+            $FolderName = Split-Path $folder.FullName -Leaf
+            Remove-Item $folder.FullName -Force -ErrorAction SilentlyContinue
+            $stats.PurgedFolders++
+            Write-Host ("`r      [REMOVED EMPTY] ...\$FolderName").PadRight($LineWidth) -NoNewline -ForegroundColor DarkGray
         }
+    }
+}
+Write-Host "`n >> Phase 4 Complete." -ForegroundColor White
+
+# --- PHASE 5: WEB GEN ---
+foreach ($loc in ($ActiveLocs | Where-Object { $_.WebType -ne "" })) {
+    $TxtFiles = Get-ChildItem $loc.Path -Filter "*.txt" -Recurse
+    $Total = $TxtFiles.Count
+    $Count = 0
+
+    foreach ($file in $TxtFiles) {
+        $Count++
+        $DestFile = Join-Path $file.DirectoryName "$($file.BaseName).md"
+
+        # Odometer for Web Gen
+        $WebStatus = "  >> Building Web Docs: [$Count/$Total] $($file.BaseName)"
+        Write-Host ("`r" + $WebStatus).PadRight(110) -NoNewline -ForegroundColor Magenta
 
         if (-not $DryRun) {
-            $Content = Get-Content $_.FullName -Raw
-            $MDHeader = "---\ntitle: '$($_.BaseName)'\ntype: '$($loc.WebType)'\ngenerated: '$(Get-Date -Format 'yyyy-MM-dd HH:mm')'\n---\n"
+            $Content = Get-Content $file.FullName -Raw
+            # Instruction followed: Using single quotes for metadata keys
+            $MDHeader = "---`ntitle: '$($file.BaseName)'`ntype: '$($loc.WebType)'`ngenerated: '$(Get-Date -Format 'yyyy-MM-dd HH:mm')'`n---"
             ($MDHeader + "`n`n" + $Content) | Out-File $DestFile -Encoding utf8
-            $stats.WebGen++ # Now the email will show how many recipes were built!
+            $stats.WebGen++
         }
     }
 }
+Write-Host "`n >> Phase 5 Complete." -ForegroundColor White
+
 # --- PHASE 6: MISSION REPORT & EMAIL ---
 $Duration = $globalStopwatch.Elapsed.ToString("hh\:mm\:ss")
 
@@ -411,44 +406,19 @@ $SourceLines = if ($SourceCounts.Count -gt 0) {
     ($SourceCounts.GetEnumerator() | ForEach-Object { "      - {0,-15} : {1} items" -f $_.Key, $_.Value }) -join "`n"
 } else { "      - No items moved." }
 
-$Report = @"
-SENTINEL MISSION COMPLETE
-------------------------------------
-Date:     $(Get-Date -Format 'yyyy-MM-dd HH:mm')
-Mode:     $(if ($DryRun){'DRY RUN'}else{'LIVE'})
-Runtime:  $Duration
-
-STATISTICS:
-- Moved:     $($stats.Moved)
-- Verified:  $($stats.AtHome)
-- WebGen:    $($stats.WebGen)
-- Purged:    $($stats.PurgedFiles) Files / $($stats.PurgedFolders) Folders
-
-SOURCE RECAP:
-$SourceLines
-------------------------------------
+# Final Summary Body
+$ReportBody = @"
+Sentinel Sync Report: $(Get-Date)
+----------------------------------
+Total Files Checked: $($stats.AtHome + $stats.Moved)
+Files Moved:         $($stats.Moved)
+Web Docs Generated:  $($stats.WebGen)
+Folders Cleaned:     $($stats.PurgedFolders)
+----------------------------------
+Status: Mission Complete.
 "@
 
-# Output to console
-Write-Host "`n$Report" -ForegroundColor Cyan
+# Call the email function using the secrets from your .ps1 file
+Send-SentinelReport -ReportBody $ReportBody
 
-# Send the Email
-if (-not $DryRun -and $Cred) {
-    try {
-        $MailArgs = @{
-            To          = $YamlData.EmailSettings.EmailTo
-            From        = $YamlData.EmailSettings.EmailFrom
-            Subject     = "Sentinel Mission Report - $(Get-Date -Format 'yyyy-MM-dd')"
-            Body        = $Report
-            SmtpServer  = $YamlData.EmailSettings.SMTPServer
-            Port        = $YamlData.EmailSettings.SMTPPort
-            Credential  = $Cred
-            UseSsl      = $true
-            ErrorAction = 'Stop'
-        }
-        Send-MailMessage @MailArgs
-        Write-Host ">> Email Report Sent Successfully." -ForegroundColor Green
-    } catch {
-        Write-Warning "Email failed to send: $($_.Exception.Message)"
-    }
-}
+Stop-Transcript

@@ -54,6 +54,12 @@ FileTypes:
     - '.xmp'
     - '.json'
     - '.xml'
+  # Junk files get deleted
+  Junk:
+    - 'Thumbs.db'
+    - 'desktop.ini'
+    - '.DS_Store'
+    - 'ehthumbs.db'
 
 Locations:
   # --- THE GLOBAL ARCHIVE ---
