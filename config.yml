@@ -16,6 +16,7 @@
   'DisableJunkPurge': true
   'Exclusions':
     - '.webaxs'
+    - '_putaway'
     - '$RECYCLE.BIN'
     - 'System Volume Information'
 
@@ -144,6 +145,16 @@
     'Structure':
       - 'Chrono'
 
+  - 'Name': 'SnippingTool'
+    'Path': 'C:\Users\mille\Pictures\SnippingTool'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': false
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
+
 # --- HYBRID / WEB ARCHIVES (Fixed Taxonomy) ---
   - 'Name': 'MakeMeASammich'
     'Path': 'H:\MakeMeASammich\website\docs\recipes'
@@ -154,7 +165,7 @@
     'SitePath': 'H:\MakeMeASammich\website'
     'Template': 'recipe-card'
     'Overwrite': true
-    'PurgeOrphan': false
+    'PurgeOrphan': true
     'AutoStart': true
     'GroupSeparator': '-.-'
     'Structure':

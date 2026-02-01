@@ -4,6 +4,11 @@
 # Updates: Fixed missing Overwrite variable.
 #          Full integration with Template Engine.
 # ==============================================================================
+# Force PyCharm/PS 5.1 into UTF-8 mode immediately
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+#$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+
 
 # --- IMPORT CORE LIBRARY ---
 $CorePath = Join-Path $PSScriptRoot 'Sentinel-Core.ps1'
@@ -51,16 +56,46 @@ Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
 $LocObjects = $YamlData.Locations | ForEach-Object { [PSCustomObject]$_ }
 Write-SentinelPhase0 -Locations $LocObjects -IsWebGen $true
 Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
-
-
 # --- PHASE 1: GENERATING WEB CONTENT ---
 foreach ($loc in $WebLocations) {
     if ($loc.Role -ne 'Hybrid_Archive') { continue }
 
+    if ($null -ne $loc.SitePath) { $TargetSitePath = $loc.SitePath }
+
+    $Exclusions = $YamlData.'Exclusions'
     $ImgExts = $YamlData.'FileTypes'.'Images'
-    $SourceFiles = Get-ChildItem -Path $loc.Path -File -Recurse | Where-Object { $_.Extension -in $ImgExts }
-    $DocTarget = Join-Path $loc.SitePath 'docs\recipes'
     $EffectiveOverwrite = if ($null -ne $loc.Overwrite) { $loc.Overwrite } else { $GlobalOverwrite }
+
+    # --- PHASE 1A: CATEGORY MAPPING (ALL FOLDERS) ---
+    Write-Host "  >> Mapping categories for all folders in $($loc.Name)..." -ForegroundColor Gray
+
+    # Get all subdirectories while strictly respecting your Exclusions list
+    $AllFolders = Get-ChildItem -Path $loc.Path -Directory -Recurse | Where-Object {
+        $DirPath = $_.FullName
+        $IsExcluded = $false
+        foreach ($ex in $Exclusions) {
+            if ($DirPath -like "*\$ex\*") { $IsExcluded = $true; break }
+        }
+        -not $IsExcluded
+    }
+
+    # Generate category for the Root folder
+    Write-SentinelCategoryYaml -FolderPath $loc.Path -FolderName (Split-Path $loc.Path -Leaf) -Force $EffectiveOverwrite
+
+    # Generate categories for all valid subfolders
+    foreach ($dir in $AllFolders) {
+        Write-SentinelCategoryYaml -FolderPath $dir.FullName -FolderName $dir.Name -Force $EffectiveOverwrite
+    }
+
+    # --- PHASE 1B: FILE PROCESSING ---
+    $SourceFiles = Get-ChildItem -Path $loc.Path -File -Recurse | Where-Object {
+        $FilePath = $_.FullName
+        $IsExcluded = $false
+        foreach ($ex in $Exclusions) {
+            if ($FilePath -like "*\$ex\*") { $IsExcluded = $true; break }
+        }
+        ($_.Extension -in $ImgExts) -and (-not $IsExcluded)
+    }
 
     foreach ($file in $SourceFiles) {
         $stats.Scanned++
@@ -68,10 +103,9 @@ foreach ($loc in $WebLocations) {
 
         $Result = Build-WebPageFromTemplate `
             -SourceFile $file `
-            -TargetFolder $DocTarget `
+            -TargetFolder $file.DirectoryName `
             -TemplateType $loc.Template `
             -Overwrite $EffectiveOverwrite
-
         switch ($Result) {
             'CREATED' { $stats.Created++ }
             'UPDATED' { $stats.Updated++ }
@@ -82,11 +116,10 @@ foreach ($loc in $WebLocations) {
 }
 
 # --- PHASE 2: SITE LAUNCH ---
-if ($null -ne $TargetSitePath -and -not $DryRun -and ($stats.Created -gt 0 -or $stats.Errors -eq 0)) {
-    # Only launch if we haven't already called this in this session
-    if (-not $Global:SiteLaunched) {
+if ($null -ne $TargetSitePath -and -not $DryRun) {
+    if (-not $Global:SentinelSiteLaunched) {
         AutoStartWebSite -Path $TargetSitePath
-        $Global:SiteLaunched = $true
+        $Global:SentinelSiteLaunched = $true
     }
 }
 

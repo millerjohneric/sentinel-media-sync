@@ -2,6 +2,9 @@
 # Sentinel Core Library v3.0 (Strict Credential Sanitizer)
 # ==============================================================================
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+#$OutputEncoding = [System.Text.Encoding]::UTF8
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 # --- FORMATTING & UI HELPERS ---
 
 function Get-SentinelWidth {
@@ -28,25 +31,43 @@ function Get-SentinelRoleColor {
 }
 
 # --- UI DISPLAY FUNCTIONS ---
+
 function Write-SentinelPhase0 {
     param($Locations)
     Write-Host '     STATUS      NAME                ROLE                PATH'
     foreach ($loc in $Locations) {
         $IsOnline = Test-Path $loc.Path
 
-        # GEEK FIX: If 'Enabled' isn't in YAML, assume True.
-        # But if it's a Hybrid_Archive, we mark it as [READY]
-        $StatusStr = if (-not $IsOnline) { '[OFFLINE ]' }
-                     elseif ($loc.Role -eq 'Hybrid_Archive') { '[READY   ]' }
-                     else { '[SKIP    ]' }
+        # Determine Status and its Color
+        if (-not $IsOnline) {
+            $StatusStr = '[OFFLINE ]'
+            $StatusColor = 'Red'
+        }
+        elseif ($loc.Role -eq 'Hybrid_Archive') {
+            $StatusStr = '[READY   ]'
+            $StatusColor = 'Green'
+        }
+        else {
+            $StatusStr = '[SKIP    ]'
+            $StatusColor = 'DarkGray'
+        }
 
         $Name = "[$($loc.Name.PadRight(15))]"
         $Role = "[$($loc.Role.PadRight(18))]"
         $Path = $loc.Path
 
-        Write-Host "     $StatusStr  $Name $Role $Path"
+        # Get the Role Color from your helper
+        $RoleColor = Get-SentinelRoleColor -Role $loc.Role
+
+        # Write the line in colored chunks
+        Write-Host "     " -NoNewline
+        Write-Host $StatusStr -NoNewline -ForegroundColor $StatusColor
+        Write-Host "  $Name " -NoNewline
+        Write-Host $Role -NoNewline -ForegroundColor $RoleColor
+        Write-Host " $Path"
     }
 }
+
 
 function Write-SentinelOdometer {
     param($Tag, $Source, $Path, $Current = 0, $Total = 0)
@@ -170,6 +191,43 @@ function Get-SentinelBuddy {
 
 # --- WEB GENERATION & TEMPLATE ENGINE ---
 
+function Write-SentinelCategoryYaml {
+    param(
+        [string]$FolderPath,
+        [string]$FolderName,
+        [bool]$Force = $false
+    )
+
+    $CategoryFile = Join-Path $FolderPath '_category_.yml'
+
+    # Fix: Wrap Test-Path in parentheses so -and parses correctly
+    if ((Test-Path $CategoryFile) -and (-not $Force)) { return }
+
+    $TextInfo = (Get-Culture).TextInfo
+    $CleanLabel = $TextInfo.ToTitleCase($FolderName.Replace('-', ' ').Replace('_', ' '))
+
+    # SCHEMA FIX: 'title' is nested under 'link' using single quotes
+    $YamlContent = @"
+label: '$CleanLabel'
+link:
+  type: 'generated-index'
+  title: '$CleanLabel Recipes'
+  description: 'A collection of our favorite $FolderName recipes.'
+"@
+
+    $YamlContent | Set-Content -Path $CategoryFile -Force -Encoding UTF8
+}
+
+
+function Test-SentinelExclusion {
+    param([string]$Path)
+    $Exclusions = $script:YamlData.'Exclusions'
+    foreach ($ex in $Exclusions) {
+        if ($Path -like "*\$ex\*") { return $true }
+    }
+    return $false
+}
+
 function Build-WebPageFromTemplate {
     param(
         [Parameter(Mandatory=$true)]
@@ -184,44 +242,65 @@ function Build-WebPageFromTemplate {
         [Parameter(Mandatory=$true)]
         [bool]$Overwrite
     )
-
-    # Ensure the destination exists
+    $Output | Set-Content -Path $TargetFile -Force -Encoding UTF8
     if (-not (Test-Path $TargetFolder)) { New-Item $TargetFolder -ItemType Directory -Force | Out-Null }
 
     $TargetFileName = $SourceFile.BaseName + '.md'
     $TargetPath = Join-Path $TargetFolder $TargetFileName
 
-    # Skip logic
-    if ((Test-Path $TargetPath) -and (-not $Overwrite)) {
-        return 'SKIPPED'
-    }
+    if ((Test-Path $TargetPath) -and (-not $Overwrite)) { return 'SKIPPED' }
 
     try {
-        # Using your updated absolute path from YAML
+        $YamlPath = Join-Path $SourceFile.DirectoryName ($SourceFile.BaseName + '.yml')
+        $Data = if (Test-Path $YamlPath) { Get-Content $YamlPath -Raw | ConvertFrom-Yaml } else { $null }
+
         $TemplateDir = $script:YamlData.'Settings'.'TemplateDir'
-
-        # Ensure we are looking for a .md file
-        $CleanTemplate = if ($TemplateType -match '\.md$') { $TemplateType } else { "$TemplateType.md" }
-        $TemplatePath = Join-Path $TemplateDir $CleanTemplate
-
-        if (-not (Test-Path $TemplatePath)) {
-            return 'ERROR'
-        }
-
-        # Read the recipe-card.md
+        $TemplatePath = Join-Path $TemplateDir "$TemplateType.md"
+        if (-not (Test-Path $TemplatePath)) { return 'ERROR' }
         $TemplateContent = Get-Content $TemplatePath -Raw
 
-        # Perform replacements
-        $Output = $TemplateContent.Replace('{{title}}', ($SourceFile.BaseName -replace '-', ' '))
-        $Output = $Output.Replace('{{slug}}', $SourceFile.BaseName.ToLower())
-        $Output = $Output.Replace('{{primary_image}}', "![[$($SourceFile.Name)]]")
+        $ImgExts = $script:YamlData.'FileTypes'.'Images'
+        $DocExts = $script:YamlData.'FileTypes'.'Docs'
 
-        # Write out the new markdown file
-        $Output.Trim() | Set-Content -Path $TargetPath -Force -Encoding UTF8
+        $PrimaryDisplay = if ($SourceFile.Extension -in $ImgExts) {
+            "![Finished Dish]($($SourceFile.Name))"
+        } elseif ($SourceFile.Extension -in $DocExts) {
+            "### 📄 Attached Document`n[Download/View $($SourceFile.Name)]($($SourceFile.Name))"
+        } else {
+            "File: $($SourceFile.Name)"
+        }
 
+        $DisplayTitle = if ($Data.'title') { $Data.'title' } else { ($SourceFile.BaseName -replace '-', ' ') }
+        $LowSlug = $SourceFile.BaseName.ToLower()
+
+        $IngList = if ($Data.'ingredients') { ($Data.'ingredients' | ForEach-Object { "* $_" }) -join "`n" } else { "* No ingredients listed" }
+        $i = 1
+        $StepList = if ($Data.'instructions') { ($Data.'instructions' | ForEach-Object { "$($i++). $_" }) -join "`n" } else { "1. Refer to source file." }
+
+        # GEEK FIX: Handle conditional logic BEFORE the .Replace() method
+        $ServingsText = if ($Data.'servings') { $Data.'servings' } else { 'Varies' }
+
+        # --- PHASE 3: REPLACEMENT ENGINE ---
+        $Output = $TemplateContent
+
+        # Values are wrapped in single quotes here
+        $Output = $Output.Replace("{{title}}", "'$DisplayTitle'")
+        $Output = $Output.Replace("{{slug}}", "'$LowSlug'")
+        $Output = $Output.Replace("{{image_path}}", "'$($SourceFile.Name)'")
+        $Output = $Output.Replace("{{xmp_path}}", "'$($SourceFile.BaseName).yml'")
+        $Output = $Output.Replace("{{servings}}", "'$ServingsText'")
+
+        # Body content (No quotes needed)
+        $Output = $Output.Replace("{{primary_image}}", $PrimaryDisplay)
+        $Output = $Output.Replace("{{ingredients_list}}", $IngList)
+        $Output = $Output.Replace("{{instructions_list}}", $StepList)
+
+        $FinalContent = $Output.Trim()
+        $FinalContent | Set-Content -Path $TargetPath -Force -Encoding UTF8
         return 'CREATED'
     }
     catch {
+        Write-Host "  !! Error on $($SourceFile.Name): $($_.Exception.Message)" -ForegroundColor Red
         return 'ERROR'
     }
 }
@@ -231,8 +310,14 @@ function AutoStartWebSite {
         [string]$Path
     )
 
-    # Force UTF8 for this session to fix the ðŸš€ icon issues
+    # GEEK FIX: Force the internal PyCharm stream to accept UTF8
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+#    $OutputEncoding = [System.Text.Encoding]::UTF8
+
+    # This specifically targets the PyCharm console buffer
+    if ($Host.Name -match 'JetBrains') {
+        $ExecutionContext.InvokeCommand.GetCommand('Set-Variable', 'Cmdlet').Invoke()
+    }
 
     Write-Host "`n🚀 Preparing to launch Docusaurus..." -ForegroundColor Cyan
 
@@ -240,17 +325,15 @@ function AutoStartWebSite {
         Write-Host "🏠 Site Root: $Path" -ForegroundColor Gray
         Write-Host "🦖 Spawning Development Server in a NEW window..." -ForegroundColor Green
 
-        # We launch a separate PowerShell window for the server
-        # -NoExit keeps the window open if there is an error
-        # -Command runs the location change and the start command
-        $ArgList = "-NoExit", "-Command", "Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
+        # Use -EncodedCommand or -Command with explicit UTF8 settings for the child process
+        $Command = "chcp 65001 > `$null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
+
+        $ArgList = @("-NoExit", "-Command", $Command)
 
         Start-Process powershell.exe -ArgumentList $ArgList
 
-        Write-Host "💡 Access locally at http://localhost:3000" -ForegroundColor Yellow
-        Write-Host "✅ Mission complete. This window will now close." -ForegroundColor Gray
-    }
-    else {
-        Write-Host "❌ Error: Cannot find $Path" -ForegroundColor Red
+        Write-Host "💡 Access locally at http://localhost:3000" -ForegroundColor Gray
+    } else {
+        Write-Host "⚠️  Launch Failed: Path not found -> $Path" -ForegroundColor Red
     }
 }
