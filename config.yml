@@ -165,8 +165,8 @@
     'SitePath': 'H:\MakeMeASammich\website'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000/docs'
     'Template': 'recipe-card'
-    'Overwrite': true
-    'PurgeOrphan': true
+    'Overwrite': false
+    'PurgeOrphan': false
     'AutoStart': true
     'GroupSeparator': '-.-'
     'Structure':

@@ -374,7 +374,7 @@ function AutoStartWebSite {
     if (Test-Path $Path) {
         Write-Host "🏠 Site Root: $Path" -ForegroundColor Gray
         Write-Host "🦖 Spawning Development Server in a NEW window..." -ForegroundColor Green
-        if ($false){
+        if ($true){
             # Use -EncodedCommand or -Command with explicit UTF8 settings for the child process
             $Command = "chcp 65001 > `$null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
 
@@ -393,7 +393,7 @@ function AutoStartWebSite {
     }
 }
 
-if ($true) {
+if ($false) {
 
     Write-Host "`n  [LAUNCH] Spawning Docusaurus..." -ForegroundColor Green
     $TargetSitePath = 'H:\MakeMeASammich\website'

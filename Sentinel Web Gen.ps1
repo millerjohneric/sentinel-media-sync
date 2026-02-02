@@ -40,7 +40,8 @@ foreach ($loc in $WebLocations) {
     $StatusText = "CHECKING..."
 
     # 1. CLEANING PHASE (NAS-Optimized)
-    if ($loc.PurgeOrphan -and $EffectiveOverwrite) {
+    #                             manual safety change $false to $true
+    if ($loc.PurgeOrphan -and $EffectiveOverwrite -and $false) {
         Write-Host "  $($Global:Icons.Broom) Purging web docs (NAS Mode)..." -ForegroundColor Cyan
 
         # Kill Docusaurus to release network handles
