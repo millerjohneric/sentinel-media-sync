@@ -15,3 +15,4 @@ desktop.ini
 # === Secret PII ===
 /.secure/
 /Archive/
+/True/

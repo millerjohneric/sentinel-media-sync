@@ -166,7 +166,7 @@
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000/docs'
     'Template': 'recipe-card'
     'Overwrite': false
-    'PurgeOrphan': false
+    'PurgeOrphan': true
     'AutoStart': true
     'GroupSeparator': '-.-'
     'Structure':

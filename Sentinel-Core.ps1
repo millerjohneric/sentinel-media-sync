@@ -54,41 +54,55 @@ function Get-SentinelRoleColor {
 # --- UI DISPLAY FUNCTIONS ---
 
 function Write-SentinelPhase0 {
-    param($Locations)
+    param(
+        [Parameter(Mandatory=$true)]
+        $Locations,
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Sync', 'Web')]
+        $JobType
+    )
+
     Write-Host '     STATUS      NAME                ROLE                PATH'
+
     foreach ($loc in $Locations) {
         $IsOnline = Test-Path $loc.Path
 
-        # Determine Status and its Color
+        # Determine Activity based on Job Context
+        $IsRelevant = if ($JobType -eq 'Web') {
+            $loc.Role -eq 'Hybrid_Archive'
+        } else {
+            # In Sync, we check if MonitorDepth is 0 or higher
+            $loc.MonitorDepth -ge 0
+        }
+
+        # Status Logic
         if (-not $IsOnline) {
             $StatusStr = '[OFFLINE ]'
             $StatusColor = 'Red'
-        }
-        elseif ($loc.Role -eq 'Hybrid_Archive') {
-            $StatusStr = '[READY   ]'
+        } elseif ($IsRelevant) {
+            $StatusStr = '[ACTIVE  ]'
             $StatusColor = 'Green'
-        }
-        else {
-            $StatusStr = '[SKIP    ]'
+        } else {
+            $StatusStr = '[SINK    ]'
             $StatusColor = 'DarkGray'
         }
 
-        $Name = "[$($loc.Name.PadRight(15))]"
-        $Role = "[$($loc.Role.PadRight(18))]"
-        $Path = $loc.Path
+        $RoleColor = switch -regex ($loc.Role) {
+            'Hybrid'      {'Red'}
+            'Photo'       {'Yellow'}
+            'RAW'         {'Cyan'}
+            'Video|Audio' {'Magenta'}
+            'Pickup'      {'Gray'}
+            Default       {'White'}
+        }
 
-        # Get the Role Color from your helper
-        $RoleColor = Get-SentinelRoleColor -Role $loc.Role
-
-        # Write the line in colored chunks
-        Write-Host "     " -NoNewline
-        Write-Host $StatusStr -NoNewline -ForegroundColor $StatusColor
-        Write-Host "  $Name " -NoNewline
-        Write-Host $Role -NoNewline -ForegroundColor $RoleColor
-        Write-Host " $Path"
+        Write-Host '     ' -NoNewline
+        Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
+        Write-Host " [$($loc.Name.PadRight(16))]" -NoNewline
+        Write-Host " [$($loc.Role.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
+        Write-Host $loc.Path -ForegroundColor Gray
     }
 }
-
 
 function Clear-SentinelOdometer {
     $Width = Get-SentinelWidth

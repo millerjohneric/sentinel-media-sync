@@ -84,21 +84,14 @@ function Get-MediaDate {
 # --- SECRETS ---
 $SecretsPath = Join-Path $PSScriptRoot '.secure\email-settings.ps1'
 if (Test-Path $SecretsPath) { . $SecretsPath }
-
 # --- PHASE 0: MASTER PLAN ---
-# Call the new helper from the library
-$SafeWidth = Get-SentinelWidth
-
 Write-Host "`nPHASE 0: Path Readiness (DryRun=$DryRun)..." -ForegroundColor White
+$SafeWidth = Get-SentinelWidth
+Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
 
-# Ensure the multiplier is never less than 1
-$DashCount = if ($SafeWidth -gt 10) { $SafeWidth - 5 } else { 80 }
-$Divider = '   + ' + ('-' * $DashCount)
+Write-SentinelPhase0 -Locations $Locations -JobType 'Sync'
 
-Write-Host $Divider
-Write-SentinelPhase0 -Locations $Locations
-Write-Host $Divider
-
+Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
 # --- PHASE 1: MAPPING ---
 Write-Host "`nPHASE 1: MAPPING MEDIA..." -ForegroundColor Cyan
 $inv = @{ Img=0; RAW=0; Vid=0; Aud=0; Side=0 }
