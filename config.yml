@@ -2,7 +2,7 @@
   'LogPath': '-log'
   'TemplateDir': 'H:\sentinel-media-sync\templates'
   'DryRun': false
-  'Overwrite': true
+  'GlobalOverwrite': true
   'EmailSettings':
     'Enabled': true
     'To': 'millerjohneric@gmail.com'
@@ -157,12 +157,13 @@
 
 # --- HYBRID / WEB ARCHIVES (Fixed Taxonomy) ---
   - 'Name': 'MakeMeASammich'
-    'Path': 'H:\MakeMeASammich\website\docs\recipes'
+    'Path': 'H:\original-recipes\recipes'
     'Role': 'Hybrid_Archive'
     'MonitorDepth': 99
     'SortDepth': null
     'RootType': 'Recipes'
     'SitePath': 'H:\MakeMeASammich\website'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000/docs'
     'Template': 'recipe-card'
     'Overwrite': true
     'PurgeOrphan': true

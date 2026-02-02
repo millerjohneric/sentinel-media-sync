@@ -1,6 +1,24 @@
 # ==============================================================================
 # Sentinel Media Sync v17.0 [THE GEEK ULTIMATE]
 # ==============================================================================
+# ==============================================================================
+# PYCHARM & POWERSHELL 5.1 COMPATIBILITY LAYER
+# ==============================================================================
+# Force session to UTF-8 for Emojis and File Writing
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+
+# Use Hex codes for icons to prevent "ðŸ" artifacts in the script editor
+$Global:Icons = @{
+    Arrow    = [char]0x2192 # →
+    Broom    = [char]0x232B # ⌫ (Broom/Erase proxy for PS 5.1)
+    Rocket   = [char]0x21AC # ↬ (Rocket/Launch proxy)
+    Check    = [char]0x221A # √
+    Warning  = '!!'
+}
+
 
 # --- IMPORT CORE LIBRARY (STRICT SCOPE) ---
 $CoreFile = Join-Path $PSScriptRoot "Sentinel-Core.ps1"
@@ -15,12 +33,24 @@ Import-Module powershell-yaml
 
 # --- CONFIG & LOGGING ---
 $ConfigFilePath = Join-Path $PSScriptRoot 'config.yml'
-$script:YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
-$ConfigLogDir = $script:YamlData.Settings.LogPath
+$YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
+$ConfigLogDir = Join-Path $PSScriptRoot $YamlData.Settings.'LogPath'
 if (-not (Test-Path $ConfigLogDir)) { New-Item $ConfigLogDir -ItemType Directory -Force | Out-Null }
 $LogFile = Join-Path $ConfigLogDir 'Sentinel_Media_Sync.log'
-Start-Transcript -Path $LogFile -Append
 
+# --- LOG ROTATION (10MB Limit) ---
+if (Test-Path $LogFile) {
+    $LogSize = (Get-Item $LogFile).Length / 1MB
+    if ($LogSize -gt 10) {
+        Write-Host "  [CLEANUP] Log exceeds 10MB. Rotating..." -ForegroundColor Gray
+        $OldLog = $LogFile + ".bak"
+        if (Test-Path $OldLog) { Remove-Item $OldLog -Force }
+        Move-Item -Path $LogFile -Destination $OldLog -Force
+    }
+}
+
+# Now start the fresh transcript
+Start-Transcript -Path $LogFile -Append
 $globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 # --- DATA CLASS ---

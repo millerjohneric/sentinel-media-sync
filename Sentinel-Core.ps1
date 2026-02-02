@@ -1,10 +1,31 @@
 # ==============================================================================
-# Sentinel Core Library v3.0 (Strict Credential Sanitizer)
+# Sentinel Core Library v3.0 (PS 5.1 Hardened)
 # ==============================================================================
-
+# Top of Sentinel-Core.ps1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-#$OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+
+$Global:Icons = @{
+    Arrow    = [char]0x2192 # →
+    Broom    = [char]0x232B # ⌫
+    Check    = [char]0x221A # √
+}
+
+# Update Write-SentinelOdometer to use the Global Icons
+function Write-SentinelOdometer {
+    param($Tag, $Source, $Path, $Current = 0, $Total = 0)
+
+    # Calculate progress
+    $Percent = if ($Total -gt 0) { [Math]::Round(($Current / $Total) * 100) } else { 0 }
+
+    Write-Host "  $($Global:Icons.Arrow) " -NoNewline -ForegroundColor Gray
+    Write-Host "[$Tag] " -NoNewline -ForegroundColor Cyan
+    Write-Host "[$Source] " -NoNewline -ForegroundColor Gray
+    Write-Host "[$Current/$Total] " -NoNewline -ForegroundColor White
+    Write-Host " $Path" -ForegroundColor Gray
+}
+
 # --- FORMATTING & UI HELPERS ---
 
 function Get-SentinelWidth {
@@ -69,25 +90,6 @@ function Write-SentinelPhase0 {
 }
 
 
-function Write-SentinelOdometer {
-    param($Tag, $Source, $Path, $Current = 0, $Total = 0)
-    $SafeWidth = Get-SentinelWidth
-    $F_Curr = Format-SentinelNum $Current
-    $F_Tot = Format-SentinelNum $Total
-    $Progress = ""
-    if ($Total -gt 0) { $Progress = "[$($F_Curr.PadLeft($F_Tot.Length))/$F_Tot]" }
-
-    $MaxPath = $SafeWidth - 65
-    $CleanPath = $Path
-    if ($Path.Length -gt $MaxPath -and $MaxPath -gt 5) {
-        $CutPoint = $Path.Length - ($MaxPath - 3)
-        if ($CutPoint -gt 0) { $CleanPath = '...' + $Path.Substring($CutPoint) }
-    }
-
-    $Line = "`r  >> [{0,-8}] [{1,-12}] {2,-15} {3}" -f $Tag, $Source, $Progress, $CleanPath
-    Write-Host $Line.PadRight($SafeWidth) -NoNewline -ForegroundColor Gray
-}
-
 function Clear-SentinelOdometer {
     $Width = Get-SentinelWidth
     Write-Host ("`r" + (' ' * $Width) + "`r") -NoNewline
@@ -97,7 +99,7 @@ function Clear-SentinelOdometer {
 
 function Initialize-SentinelSecrets {
     $Conf = $script:YamlData.'Settings'.'EmailSettings'
-    $BaseDir = 'H:\sentinel-media-sync'
+    $BaseDir = $PSScriptRoot
     $SecretFile = Join-Path $BaseDir ($Conf.'CredPath')
 
     if (-not (Test-Path $SecretFile)) {
@@ -134,12 +136,14 @@ function Initialize-SentinelSecrets {
     }
 }
 
+
 function Send-SentinelReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
         [string]$ReportBody,
-        [string]$JobName = 'Sync'
+        [string]$JobName = 'Sync',
+        [string]$SiteUrl = ''  # New optional parameter
     )
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -152,7 +156,27 @@ function Send-SentinelReport {
         $Msg.From = New-Object System.Net.Mail.MailAddress($script:GmailUser)
         $Msg.To.Add($Conf.'To')
         $Msg.Subject = "Sentinel $JobName Report: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
-        $Msg.Body = $ReportBody
+
+        # --- HTML Body Construction ---
+        $Msg.IsBodyHtml = $true
+        $HtmlBody = @"
+<html>
+<body style="font-family: sans-serif; line-height: 1.6; color: #333;">
+    <h2 style="color: #2e8555;">Sentinel $JobName Report</h2>
+    <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #ddd;">$ReportBody</pre>
+"@
+        # Append Link if SiteUrl is provided
+        if (![string]::IsNullOrEmpty($SiteUrl)) {
+            $HtmlBody += @"
+    <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-left: 5px solid #2e8555;">
+        <strong>🌍 Live Site Updated:</strong><br />
+        <a href="$SiteUrl" style="color: #2e8555; font-weight: bold; text-decoration: none;">$SiteUrl</a>
+    </div>
+"@
+        }
+
+        $HtmlBody += "</body></html>"
+        $Msg.Body = $HtmlBody
 
         $Smtp = New-Object System.Net.Mail.SmtpClient('smtp.gmail.com', 587)
         $Smtp.EnableSsl = $true
@@ -171,10 +195,11 @@ function Send-SentinelReport {
 
         $Reset = Read-Host 'Reset credentials and try again? (Y/N)'
         if ($Reset -eq 'Y') {
-            Remove-Item (Join-Path 'H:\sentinel-media-sync' $Conf.'CredPath') -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $PSScriptRoot $Conf.'CredPath') -Force -ErrorAction SilentlyContinue
         }
     }
 }
+
 
 
 # --- FILE LOGIC HELPERS ---
@@ -191,33 +216,6 @@ function Get-SentinelBuddy {
 
 # --- WEB GENERATION & TEMPLATE ENGINE ---
 
-function Write-SentinelCategoryYaml {
-    param(
-        [string]$FolderPath,
-        [string]$FolderName,
-        [bool]$Force = $false
-    )
-
-    $CategoryFile = Join-Path $FolderPath '_category_.yml'
-
-    # Fix: Wrap Test-Path in parentheses so -and parses correctly
-    if ((Test-Path $CategoryFile) -and (-not $Force)) { return }
-
-    $TextInfo = (Get-Culture).TextInfo
-    $CleanLabel = $TextInfo.ToTitleCase($FolderName.Replace('-', ' ').Replace('_', ' '))
-
-    # SCHEMA FIX: 'title' is nested under 'link' using single quotes
-    $YamlContent = @"
-label: '$CleanLabel'
-link:
-  type: 'generated-index'
-  title: '$CleanLabel Recipes'
-  description: 'A collection of our favorite $FolderName recipes.'
-"@
-
-    $YamlContent | Set-Content -Path $CategoryFile -Force -Encoding UTF8
-}
-
 
 function Test-SentinelExclusion {
     param([string]$Path)
@@ -230,80 +228,132 @@ function Test-SentinelExclusion {
 
 function Build-WebPageFromTemplate {
     param(
-        [Parameter(Mandatory=$true)]
-        [System.IO.FileInfo]$SourceFile,
-
-        [Parameter(Mandatory=$true)]
+        [System.IO.FileInfo[]]$SourceFiles,
         [string]$TargetFolder,
-
-        [Parameter(Mandatory=$true)]
         [string]$TemplateType,
-
-        [Parameter(Mandatory=$true)]
-        [bool]$Overwrite
+        [bool]$Overwrite,
+        [string]$GroupSeparator = '-.-'
     )
-    $Output | Set-Content -Path $TargetFile -Force -Encoding UTF8
-    if (-not (Test-Path $TargetFolder)) { New-Item $TargetFolder -ItemType Directory -Force | Out-Null }
 
-    $TargetFileName = $SourceFile.BaseName + '.md'
-    $TargetPath = Join-Path $TargetFolder $TargetFileName
+    if (-not $SourceFiles) { return 'ERROR' }
 
-    if ((Test-Path $TargetPath) -and (-not $Overwrite)) { return 'SKIPPED' }
+    # 1. Prepare Target Directory
+    if (-not (Test-Path $TargetFolder)) {
+        New-Item -Path $TargetFolder -ItemType Directory -Force | Out-Null
+    }
 
-    try {
-        $YamlPath = Join-Path $SourceFile.DirectoryName ($SourceFile.BaseName + '.yml')
-        $Data = if (Test-Path $YamlPath) { Get-Content $YamlPath -Raw | ConvertFrom-Yaml } else { $null }
+    # 2. Extract Primary Info (LastIndexOf preserves 'natural-body-wash')
+    $RawBase = $SourceFiles[0].BaseName
+    $EscapedSep = [regex]::Escape($GroupSeparator)
+    $CleanName = if ($RawBase -match $EscapedSep) {
+        $RawBase.Substring(0, $RawBase.LastIndexOf($GroupSeparator))
+    } else { $RawBase }
 
-        $TemplateDir = $script:YamlData.'Settings'.'TemplateDir'
-        $TemplatePath = Join-Path $TemplateDir "$TemplateType.md"
-        if (-not (Test-Path $TemplatePath)) { return 'ERROR' }
-        $TemplateContent = Get-Content $TemplatePath -Raw
+    $MdPath = Join-Path $TargetFolder "$CleanName.md"
 
-        $ImgExts = $script:YamlData.'FileTypes'.'Images'
-        $DocExts = $script:YamlData.'FileTypes'.'Docs'
-
-        $PrimaryDisplay = if ($SourceFile.Extension -in $ImgExts) {
-            "![Finished Dish]($($SourceFile.Name))"
-        } elseif ($SourceFile.Extension -in $DocExts) {
-            "### 📄 Attached Document`n[Download/View $($SourceFile.Name)]($($SourceFile.Name))"
-        } else {
-            "File: $($SourceFile.Name)"
+    # 3. Copy Assets
+    foreach ($file in $SourceFiles) {
+        $DestFile = Join-Path $TargetFolder $file.Name
+        if (-not (Test-Path $DestFile) -or $Overwrite) {
+            Copy-Item -Path $file.FullName -Destination $DestFile -Force
         }
-
-        $DisplayTitle = if ($Data.'title') { $Data.'title' } else { ($SourceFile.BaseName -replace '-', ' ') }
-        $LowSlug = $SourceFile.BaseName.ToLower()
-
-        $IngList = if ($Data.'ingredients') { ($Data.'ingredients' | ForEach-Object { "* $_" }) -join "`n" } else { "* No ingredients listed" }
-        $i = 1
-        $StepList = if ($Data.'instructions') { ($Data.'instructions' | ForEach-Object { "$($i++). $_" }) -join "`n" } else { "1. Refer to source file." }
-
-        # GEEK FIX: Handle conditional logic BEFORE the .Replace() method
-        $ServingsText = if ($Data.'servings') { $Data.'servings' } else { 'Varies' }
-
-        # --- PHASE 3: REPLACEMENT ENGINE ---
-        $Output = $TemplateContent
-
-        # Values are wrapped in single quotes here
-        $Output = $Output.Replace("{{title}}", "'$DisplayTitle'")
-        $Output = $Output.Replace("{{slug}}", "'$LowSlug'")
-        $Output = $Output.Replace("{{image_path}}", "'$($SourceFile.Name)'")
-        $Output = $Output.Replace("{{xmp_path}}", "'$($SourceFile.BaseName).yml'")
-        $Output = $Output.Replace("{{servings}}", "'$ServingsText'")
-
-        # Body content (No quotes needed)
-        $Output = $Output.Replace("{{primary_image}}", $PrimaryDisplay)
-        $Output = $Output.Replace("{{ingredients_list}}", $IngList)
-        $Output = $Output.Replace("{{instructions_list}}", $StepList)
-
-        $FinalContent = $Output.Trim()
-        $FinalContent | Set-Content -Path $TargetPath -Force -Encoding UTF8
-        return 'CREATED'
     }
-    catch {
-        Write-Host "  !! Error on $($SourceFile.Name): $($_.Exception.Message)" -ForegroundColor Red
-        return 'ERROR'
+
+    # 4. Check Overwrite (Strict Boolean for PS 5.1)
+    $ShouldWrite = (-not (Test-Path $MdPath)) -or ($Overwrite -eq $true)
+    if (-not $ShouldWrite) { return 'SKIP' }
+
+    # 5. Data Gathering
+    $DisplayTitle = (Get-Culture).TextInfo.ToTitleCase(($CleanName -replace '-', ' ').ToLower())
+    $MediaGallery = ""
+    $Instructions = ""
+    $Metadata = ""
+
+    foreach ($f in $SourceFiles) {
+        $Ext = $f.Extension.ToLower()
+
+        # Images & Videos
+        if ($Ext -match 'jpg|jpeg|png|webp|gif|heic|tif|tiff') {
+            $MediaGallery += "![image]($($f.Name))`n`n"
+        }
+        elseif ($Ext -match 'mp4|mov|avi|mkv') {
+            $MediaGallery += "### Video Native Playback`n<video controls style={{width: '100%'}} src='./$($f.Name)' />`n`n"
+        }
+        # Instructions (Web/Docs)
+        elseif ($Ext -eq '.md') {
+            $Instructions += (Get-Content $f.FullName -Raw) -replace '(?s)^---.*?---', ''
+        }
+        elseif ($Ext -eq '.txt') {
+            $Instructions += "`n" + (Get-Content $f.FullName -Raw) + "`n"
+        }
+        # Metadata (Sidecars)
+        elseif ($Ext -match 'json|xml|yml|yaml') {
+            $Lang = $Ext.TrimStart('.')
+            $RawMeta = Get-Content $f.FullName -Raw
+            $Metadata += "### Metadata ($Lang)`n" + '```' + "$Lang`n$RawMeta`n" + '```' + "`n"
+        }
     }
+
+    # 6. REPLACEMENT ENGINE (Variable Based)
+    $FinalInstructions = "No instructions found."
+    if ($Instructions.Trim()) { $FinalInstructions = $Instructions }
+
+    $Tmpl = @(
+        "---",
+        "title: {{title}}",
+        "slug: {{slug}}",
+        "---",
+        "",
+        "# {{title}}",
+        "",
+        "{{primary_image}}",
+        "",
+        "## Instructions",
+        "{{instructions_list}}",
+        "",
+        "---",
+        "{{metadata_section}}"
+    ) -join "`r`n"
+
+    $FinalMD = $Tmpl
+    $FinalMD = $FinalMD.Replace('{{title}}', $DisplayTitle)
+    $FinalMD = $FinalMD.Replace('{{slug}}', $CleanName.ToLower())
+    $FinalMD = $FinalMD.Replace('{{primary_image}}', $MediaGallery)
+    $FinalMD = $FinalMD.Replace('{{instructions_list}}', $FinalInstructions)
+    $FinalMD = $FinalMD.Replace('{{metadata_section}}', $Metadata)
+
+    # 7. Write to NAS (Hardened)
+    $FinalMD | Set-Content -Path $MdPath -Encoding UTF8 -Force
+
+    return 'CREATED'
 }
+
+function Write-SentinelCategoryYaml {
+    param($FolderPath, $FolderName, $Force)
+    if (-not (Test-Path $FolderPath)) { New-Item -ItemType Directory -Path $FolderPath -Force | Out-Null }
+    $Path = Join-Path $FolderPath "_category_.yml"
+    "label: '$FolderName'`nlink:`n  type: generated-index" | Set-Content $Path -Encoding UTF8 -Force
+}
+
+function Write-SentinelRecipeIndex {
+    param([string]$TargetRoot, [int]$GroupCount)
+    $Path = Join-Path $TargetRoot "index.md"
+    $PrettyDate = Get-Date -Format "MMMM dd, yyyy"
+    $Content = @(
+        "---",
+        "title: Recipe Library",
+        "sidebar_position: 1",
+        "slug: /recipes",
+        "---",
+        "",
+        "# Recipe Vault",
+        "Categories: $GroupCount",
+        "Last Updated: $PrettyDate"
+    ) -join "`r`n"
+    $Content | Set-Content -Path $Path -Encoding UTF8 -Force
+}
+
+
 
 function AutoStartWebSite {
     param(
@@ -324,16 +374,29 @@ function AutoStartWebSite {
     if (Test-Path $Path) {
         Write-Host "🏠 Site Root: $Path" -ForegroundColor Gray
         Write-Host "🦖 Spawning Development Server in a NEW window..." -ForegroundColor Green
+        if ($false){
+            # Use -EncodedCommand or -Command with explicit UTF8 settings for the child process
+            $Command = "chcp 65001 > `$null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
 
-        # Use -EncodedCommand or -Command with explicit UTF8 settings for the child process
-        $Command = "chcp 65001 > `$null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
+            $ArgList = @("-NoExit", "-Command", $Command)
 
-        $ArgList = @("-NoExit", "-Command", $Command)
+            Start-Process powershell.exe -ArgumentList $ArgList
 
-        Start-Process powershell.exe -ArgumentList $ArgList
+        } else {
+            Set-Location $Path
+            npx docusaurus start --host 0.0.0.0 --port 3000
+            Write-Host "💡 Access locally at http://localhost:3000" -ForegroundColor Gray
+        }
 
-        Write-Host "💡 Access locally at http://localhost:3000" -ForegroundColor Gray
     } else {
         Write-Host "⚠️  Launch Failed: Path not found -> $Path" -ForegroundColor Red
     }
+}
+
+if ($true) {
+
+    Write-Host "`n  [LAUNCH] Spawning Docusaurus..." -ForegroundColor Green
+    $TargetSitePath = 'H:\MakeMeASammich\website'
+    AutoStartWebSite -Path $TargetSitePath
+
 }
