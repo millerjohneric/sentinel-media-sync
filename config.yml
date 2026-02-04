@@ -53,7 +53,7 @@
       - 'Chrono'
 
   - 'Name': 'Photography'
-    'Path': 'P:\Photography'
+    'Path': 'H:\-in-box\Photography'
     'Role': 'RAW_Archive'
     'MonitorDepth': 1
     'SortDepth': 1
@@ -106,7 +106,7 @@
 
 # --- PICKUP ZONES (Loading Zones) ---
   - 'Name': 'John'
-    'Path': 'P:\John'
+    'Path': 'H:\-in-box\John'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -116,7 +116,7 @@
       - 'Chrono'
 
   - 'Name': 'Roena'
-    'Path': 'P:\Roena'
+    'Path': 'H:\-in-box\Roena'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -126,7 +126,17 @@
       - 'Chrono'
 
   - 'Name': 'BigAssTablet'
-    'Path': 'P:\BigAssTablet'
+    'Path': 'H:\-in-box\BigAssTablet'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': false
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
+
+  - 'Name': 'Downloads'
+    'Path': 'H:\-in-box\Downloads'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
