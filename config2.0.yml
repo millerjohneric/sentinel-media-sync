@@ -1,6 +1,25 @@
+'Project_Status':
+  'Version': '17.7'
+  'Codenames':
+    'Network': 'Source'
+    'Machine': 'GEEK'
+    'Volume': 'S:'
+  'DriveIcon': 'the-source.ico'
+  'Exclusions_Active':
+    - '.webaxs'
+    - 'trashbox'
+    - '.git'
+    - '$RECYCLE.BIN'
+
+'Root_Layout':
+  'GitHub_Repo': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync'
+  'Data_Root': 'C:\Source'
+  'Network_Share': '\\GEEK\Source'
+  'Mapped_Drive': 'S:\'
+
 'Settings':
-  'LogPath': '-log'
-  'TemplateDir': 'H:\sentinel-media-sync\templates'
+  'LogPath': '_log'
+  'TemplateDir': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync\templates'
   'DryRun': false
   'GlobalOverwrite': true
   'EmailSettings':
@@ -42,8 +61,8 @@
 
 'Locations':
 # --- ARCHIVES (Destinations) ---
-  - 'Name': 'Photos'
-    'Path': 'H:\Photos'
+  - 'Name': 'Chronicles_Archive'
+    'Path': 'C:\Source\GEEK\Photo_Archive\Chronicles'
     'Role': 'Photo_Archive'
     'MonitorDepth': 1
     'SortDepth': 1
@@ -51,9 +70,9 @@
     'PurgeOrphan': false
     'Structure':
       - 'Chrono'
-
-  - 'Name': 'Photography'
-    'Path': 'H:\-in-box\Photography'
+      -
+  - 'Name': 'Photography_RAW'
+    'Path': 'C:\Source\GEEK\Photography_Hobby\_RAW'
     'Role': 'RAW_Archive'
     'MonitorDepth': 1
     'SortDepth': 1
@@ -63,8 +82,8 @@
       - 'Chrono'
       - 'Event'
 
-  - 'Name': 'ExcessPhotos'
-    'Path': 'W:\ExcessPhotos'
+  - 'Name': 'Shadow_Echoes'
+    'Path': 'C:\Source\GEEK\Photo_Archive\Shadow_Echoes'
     'Role': 'InPlace_Archive'
     'MonitorDepth': 2
     'PurgeOrphan': false
@@ -73,8 +92,17 @@
       - 'Chrono'
       - 'Event'
 
-  - 'Name': 'PhotoGroups'
-    'Path': 'H:\PhotoGroups'
+  - 'Name': 'Visual_Registry'
+    'Path': 'C:\Source\GEEK\Photo_Archive\Visual_Registry'
+    'MonitorDepth': 2
+    'PurgeOrphan': false
+    'RootType': 'Hybrid'
+    'Structure':
+      - 'Chrono'
+      - 'Event'
+
+  - 'Name': 'Legends'
+    'Path': 'C:\Source\GEEK\Photo_Archive\Legends'
     'Role': 'InPlace_Archive'
     'MonitorDepth': 2
     'PurgeOrphan': false
@@ -85,7 +113,7 @@
 
 # --- PASSIVE SINKS ---
   - 'Name': 'Videos'
-    'Path': 'H:\Videos'
+    'Path': 'C:\Source\GEEK\Movies_and_Videos\Videos'
     'Role': 'Video_Archive'
     'MonitorDepth': 0
     'SortDepth': 1
@@ -94,8 +122,8 @@
     'Structure':
       - 'Chrono'
 
-  - 'Name': 'Audio'
-    'Path': 'H:\Audio'
+  - 'Name': 'Sonic_Discography'
+    'Path': 'C:\Source\GEEK\Music_Harmonics\Sonic_Discography'
     'Role': 'Audio_Archive'
     'MonitorDepth': 0
     'SortDepth': 1
@@ -106,7 +134,7 @@
 
 # --- PICKUP ZONES (Loading Zones) ---
   - 'Name': 'John'
-    'Path': 'H:\-in-box\John'
+    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\John'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -116,7 +144,7 @@
       - 'Chrono'
 
   - 'Name': 'Roena'
-    'Path': 'H:\-in-box\Roena'
+    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\Roena'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -126,7 +154,7 @@
       - 'Chrono'
 
   - 'Name': 'BigAssTablet'
-    'Path': 'H:\-in-box\BigAssTablet'
+    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\BigAssTablet'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -136,7 +164,7 @@
       - 'Chrono'
 
   - 'Name': 'Downloads'
-    'Path': 'H:\-in-box\Downloads'
+    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\Downloads'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -165,19 +193,64 @@
     'Structure':
       - 'Chrono'
 
-# --- HYBRID / WEB ARCHIVES (Fixed Taxonomy) ---
-  - 'Name': 'MakeMeASammich'
-    'Path': 'H:\original-recipes\recipes'
+  - 'Name': 'ControlCenter4'
+    'Path': 'C:\Users\mille\Pictures\ControlCenter4\Scan'
+    'Role': 'Pickup'
+    'MonitorDepth': 99
+    'SortDepth': 0
+    'PurgeOrphan': false
+    'Scope': 'Global'
+    'Structure':
+      - 'Chrono'
+
+# --- SOURCE STUDIO ENGINE (Unified Site) ---
+  - 'Name': 'Recipes_Manna'
+    'Path': 'C:\Source\GEEK\Recipes_Manna\original-recipes'
     'Role': 'Hybrid_Archive'
+    'SitePath': 'C:\Source_Studio\website'
+    'WebSubFolder': 'recipes'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'recipe-card'
+    'RootType': 'Recipes'
     'MonitorDepth': 99
     'SortDepth': null
-    'RootType': 'Recipes'
-    'SitePath': 'H:\MakeMeASammich\website'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000/docs'
-    'Template': 'recipe-card'
     'Overwrite': false
     'PurgeOrphan': true
     'AutoStart': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
+
+  - 'Name': 'Miller_Made_Craft'
+    'Path': 'C:\Source\GEEK\Miller_Made_Craft\products'
+    'Role': 'Hybrid_Archive'
+    'SitePath': 'C:\Source_Studio\website'
+    'WebSubFolder': 'shop'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'product-showcase'
+    'RootType': 'Recipes'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': false
+    'PurgeOrphan': false
+    'AutoStart': false
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
+
+  - 'Name': 'Photography_Portfolio'
+    'Path': 'C:\Source\GEEK\Photography_Hobby\_RAW'
+    'Role': 'Hybrid_Archive'
+    'SitePath': 'C:\Source_Studio\website'
+    'WebSubFolder': 'gallery'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'masonry-grid'
+    'RootType': 'Recipes'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': false
+    'PurgeOrphan': true
+    'AutoStart': false
     'GroupSeparator': '-.-'
     'Structure':
       - 'Event'

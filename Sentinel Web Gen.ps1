@@ -1,5 +1,5 @@
 # ==============================================================================
-# Sentinel Web Gen v17.7 [THE GEEK MODULAR - FINALIZED]
+# Sentinel Web Gen v17.7 [THE GEEK MODULAR - MULTI-SITE UPDATE]
 # ==============================================================================
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
@@ -14,7 +14,7 @@ Set-Location -Path $PSScriptRoot
 if (-not (Get-Module -ListAvailable powershell-yaml)) { Install-Module -Name powershell-yaml -Scope CurrentUser -Force }
 Import-Module powershell-yaml
 
-$ConfigFilePath = Join-Path $PSScriptRoot 'config.yml'
+$ConfigFilePath = Join-Path $PSScriptRoot 'config2.0.yml'
 $YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
 $WebLocations = $YamlData.Locations
 
@@ -35,40 +35,31 @@ Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
 Write-SentinelPhase0 -Locations $WebLocations -JobType 'Web'
 
 Write-Host ('   + ' + ('-' * ($SafeWidth - 5)))
-
-# --- MAIN PROCESS LOOP ---
+# --- MAIN PROCESS LOOP (Updated) ---
 foreach ($loc in $WebLocations) {
-    if ($loc.Role -ne 'Hybrid_Archive') { continue }
+    if ($loc.Role -ne 'Hybrid_Archive' -and $loc.Name -ne 'Photography_Portfolio') { continue }
 
-    Write-Host "`n>>> Syncing: $($loc.Name) Source -> Website" -ForegroundColor White
-    $EffectiveOverwrite = if ($null -ne $loc.Overwrite) { $loc.Overwrite } else { $true }
-    $WebDocsRoot = Join-Path $loc.SitePath "docs\recipes"
+    Write-Host "`n>>> Syncing: $($loc.Name) Source -> Unified Website" -ForegroundColor White
 
-    # Track status for reporting
-    $WasDeepCleaned = "No"
-    $StatusText = "CHECKING..."
+    # 1. Path Logic: Map to subfolders like docs\recipes, docs\shop, or docs\gallery
+    $SubDir = if ($loc.WebSubFolder) { $loc.WebSubFolder } else { 'recipes' }
+    $WebDocsRoot = Join-Path $loc.SitePath "docs\$SubDir"
 
-    # 1. CLEANING PHASE (NAS-Optimized)
-    #                             manual safety change false to true
-    if ($loc.PurgeOrphan -and $EffectiveOverwrite -and $false) {
-        Write-Host "  $($Global:Icons.Broom) Purging web docs (NAS Mode)..." -ForegroundColor Cyan
+    if (-not (Test-Path $WebDocsRoot)) {
+        New-Item -Path $WebDocsRoot -ItemType Directory -Force | Out-Null
+    }
 
-        # Kill Docusaurus to release network handles
-        Stop-Process -Name node, npm -Force -ErrorAction SilentlyContinue
-
+    # 2. Cleaning Phase (With Manual Safety preserved)
+    if ($loc.PurgeOrphan -and $false) {
+        Write-Host "  $($Global:Icons.Broom) Purging $SubDir web docs..." -ForegroundColor Cyan
         if (Test-Path $WebDocsRoot) {
-            # DONT delete the root. Delete only the CONTENTS.
-            # This preserves the Network Permissions on the 'recipes' folder itself.
-            Get-ChildItem $WebDocsRoot -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        } else {
-            New-Item -Path $WebDocsRoot -ItemType Directory -Force | Out-Null
+            Get-ChildItem $WebDocsRoot -Exclude '_category_.yml' -Recurse | Remove-Item -Force -Recurse
         }
-        $WasDeepCleaned = "Yes"
     }
 
     # 2. CATEGORY MAPPING
     Write-Host "  $($Global:Icons.Arrow) Mapping categories..." -ForegroundColor Gray
-
+    $SourceFolders = Get-ChildItem -Path $loc.Path -Directory -Recurse -ErrorAction SilentlyContinue
     $stats = [PSCustomObject]@{ Scanned=0; Created=0; Skipped=0 }
 
     foreach ($dir in $SourceFolders) {
@@ -77,11 +68,9 @@ foreach ($loc in $WebLocations) {
         $TargetWebDir = Join-Path $WebDocsRoot $RelPath
         $CategoryFile = Join-Path $TargetWebDir "_category_.yml"
 
-        # LIVE WRITE: Update the same line repeatedly
         $ProgressMsg = "`r  $($Global:Icons.Check) [INDEXING] [$($stats.Scanned)/$($SourceFolders.Count)] $RelPath"
         Write-Host $ProgressMsg.PadRight($SafeWidth) -NoNewline -ForegroundColor Gray
 
-        # STRICT OVERWRITE CHECK
         if (-not (Test-Path $CategoryFile)) {
             Write-SentinelCategoryYaml -FolderPath $TargetWebDir -FolderName $dir.Name -Force $false
             $stats.Created++
@@ -93,7 +82,7 @@ foreach ($loc in $WebLocations) {
     Write-Host ""
     Write-Host "  $($Global:Icons.Check) Indexing Complete: $($stats.Created) Created, $($stats.Skipped) Skipped." -ForegroundColor Green
 
-    # 2.5 Master Index - Only write if missing
+    # 2.5 Master Index
     $MasterIndexPath = Join-Path $WebDocsRoot "index.md"
     if (-not (Test-Path $MasterIndexPath)) {
         Write-Host "  $($Global:Icons.Check) Creating Master Index..." -ForegroundColor Green
@@ -103,8 +92,6 @@ foreach ($loc in $WebLocations) {
     }
 
     # 3. GROUPING & IMPORTING
-
-    # GEEK FIX: Dynamically build the allowed extensions list from YAML
     $AllowedExts = @()
     foreach ($Category in $YamlData.FileTypes.Recipes) {
         if ($YamlData.FileTypes.ContainsKey($Category)) {
@@ -120,7 +107,6 @@ foreach ($loc in $WebLocations) {
     }
 
     $GroupSeparator = if ($loc.GroupSeparator) { $loc.GroupSeparator } else { '-.-' }
-
     $FileGroups = $AllFiles | Group-Object {
         $BN = $_.BaseName
         if ($BN -match [regex]::Escape($GroupSeparator)) {
@@ -128,10 +114,7 @@ foreach ($loc in $WebLocations) {
         } else { $BN }
     }
 
-    # Ensure Skipped is defined to avoid property-not-found exceptions
     $stats = [PSCustomObject]@{ Scanned=0; Created=0; Skipped=0; Errors=0 }
-
-    # Determine the Tag based on Template from config
     $ProcessTag = if ($loc.Template -eq 'recipe-card') { 'RECIPE' } else { 'GROUP ' }
 
     foreach ($group in $FileGroups) {
@@ -140,20 +123,11 @@ foreach ($loc in $WebLocations) {
         $TargetFile = Join-Path $TargetWebDir "$($group.Name).md"
         $stats.Scanned += $group.Count
 
-        # --- THE LIVE ODOMETER ---
         $CurrentCount = $stats.Created + $stats.Skipped + $stats.Errors + 1
-
-        # Construct a clean status string: 0 Created | 466 Preserved
         $LiveStats = "$($stats.Created) Created | $($stats.Skipped) Preserved"
-
-        # Format the line: Arrow -> [TAG] [Count/Total] Stats
-        # We remove the trailing filename here to keep the line clean and static
         $GroupMsg = "`r  $($Global:Icons.Arrow) [$ProcessTag] [$($CurrentCount.ToString().PadLeft($($FileGroups.Count.ToString().Length)))/$($FileGroups.Count)] $LiveStats"
-
-        # PadRight ensures that as the numbers shift, any old artifacts are cleared
         Write-Host $GroupMsg.PadRight($SafeWidth) -NoNewline -ForegroundColor Cyan
 
-        # --- LOGIC ---
         if (-not (Test-Path $TargetFile)) {
             $Result = Build-WebPageFromTemplate -SourceFiles $group.Group -TargetFolder $TargetWebDir -TemplateType $loc.Template -Overwrite $false
             if ($Result -eq 'CREATED') { $stats.Created++ } else { $stats.Errors++ }
@@ -162,45 +136,46 @@ foreach ($loc in $WebLocations) {
         }
     }
 
-    # Final pass to show the absolute final count [466/466]
     $FinalMsg = "`r  $($Global:Icons.Check) [$ProcessTag] [$($FileGroups.Count)/$($FileGroups.Count)] $($stats.Created) Created | $($stats.Skipped) Preserved"
     Write-Host $FinalMsg.PadRight($SafeWidth) -ForegroundColor Green
 
     # 4. STATUS CHECK (Quick Ping)
     try {
         $TCP = New-Object System.Net.Sockets.TcpClient
-        if ($TCP.BeginConnect("localhost", 3000, $null, $null).AsyncWaitHandle.WaitOne(100)) { $StatusText = "ONLINE" } else { $StatusText = "OFFLINE" }
+        # Note: Docusaurus usually increments ports (3000, 3001, 3002) if multiple run.
+        # This check is a quick 'Is anything there?' ping.
+        if ($TCP.BeginConnect("localhost", 3000, $null, $null).AsyncWaitHandle.WaitOne(100)) {
+            $StatusText = "ONLINE"
+        } else {
+            $StatusText = "OFFLINE"
+        }
         $TCP.Close()
-    } catch { $StatusText = "OFFLINE" }
+    } catch {
+        $StatusText = "OFFLINE"
+    }
 
     # 5. REPORTING
     $Summary = @"
 Sentinel Sync: $($loc.Name)
 ---------------------------------------
-Mode:                 OVERWRITE=FALSE
 Current Site Status:  $StatusText
----------------------------------------
-Total Recipe Groups:  $($FileGroups.Count)
-Total Source Files:   $($stats.Scanned)
----------------------------------------
+Total Groups:         $($FileGroups.Count)
 NEW Pages Created:    $($stats.Created)
 EXISTING (Preserved): $($stats.Skipped)
-Build Errors:         $($stats.Errors)
 ---------------------------------------
 Mirror Target:        $WebDocsRoot
 "@
-
     Send-SentinelReport -ReportBody $Summary -JobName $loc.Name -SiteUrl $loc.SiteUrl
-    Write-Host "`nSummary for $($loc.Name):" -ForegroundColor White
-    Write-Host $Summary -ForegroundColor Gray
+}
+# --- PHASE 6: FINAL LAUNCH (Unified) ---
+Write-Host "`nPHASE 6: Spawning Unified Website..." -ForegroundColor White
+
+# Launch the master site at port 3000
+$MasterSite = $WebLocations | Where-Object { $_.SitePath -like '*website*' } | Select-Object -First 1
+if ($MasterSite -and -not $YamlData.Settings.DryRun) {
+    # This calls the function in Sentinel-Core to npx create or npm start
+    AutoStartWebSite -Path $MasterSite.SitePath
 }
 
-# 6. FINAL LAUNCH
-$Primary = $WebLocations | Where-Object {$_.Role -eq 'Hybrid_Archive'} | Select -First 1
-if ($Primary -and -not $YamlData.Settings.DryRun -and $StatusText -ne "ONLINE") {
-    Write-Host "`n  [LAUNCH] Spawning Docusaurus..." -ForegroundColor Green
-    $TargetSitePath = $loc.SitePath
-    AutoStartWebSite -Path $TargetSitePath
-}
 Write-Host "`nMISSION COMPLETE. Duration: $($globalStopwatch.Elapsed.ToString("hh\:mm\:ss"))" -ForegroundColor Green
 Stop-Transcript

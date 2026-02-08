@@ -1,32 +1,25 @@
 # ==============================================================================
 # Sentinel Core Library v3.0 (PS 5.1 Hardened)
 # ==============================================================================
-# Top of Sentinel-Core.ps1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
 $Global:Icons = @{
-    Arrow    = [char]0x2192 # →
-    Broom    = [char]0x232B # ⌫
-    Check    = [char]0x221A # √
+    Arrow    = [char]0x2192
+    Broom    = [char]0x232B
+    Check    = [char]0x221A
 }
 
-# Update Write-SentinelOdometer to use the Global Icons
 function Write-SentinelOdometer {
     param($Tag, $Source, $Path, $Current = 0, $Total = 0)
-
-    # Calculate progress
     $Percent = if ($Total -gt 0) { [Math]::Round(($Current / $Total) * 100) } else { 0 }
-
     Write-Host "  $($Global:Icons.Arrow) " -NoNewline -ForegroundColor Gray
     Write-Host "[$Tag] " -NoNewline -ForegroundColor Cyan
     Write-Host "[$Source] " -NoNewline -ForegroundColor Gray
     Write-Host "[$Current/$Total] " -NoNewline -ForegroundColor White
     Write-Host " $Path" -ForegroundColor Gray
 }
-
-# --- FORMATTING & UI HELPERS ---
 
 function Get-SentinelWidth {
     $W = try { $Host.UI.RawUI.WindowSize.Width } catch { 120 }
@@ -63,7 +56,6 @@ function Write-SentinelPhase0 {
     )
 
     Write-Host '     STATUS      NAME                ROLE                PATH'
-
     foreach ($loc in $Locations) {
         $IsOnline = Test-Path $loc.Path
 
@@ -351,6 +343,12 @@ function Write-SentinelCategoryYaml {
 
 function Write-SentinelRecipeIndex {
     param([string]$TargetRoot, [int]$GroupCount)
+
+    # FIX: Create subdirectories (docs/recipes) if they are missing
+    if (-not (Test-Path $TargetRoot)) {
+        New-Item -ItemType Directory -Path $TargetRoot -Force | Out-Null
+    }
+
     $Path = Join-Path $TargetRoot "index.md"
     $PrettyDate = Get-Date -Format "MMMM dd, yyyy"
     $Content = @(
@@ -366,51 +364,43 @@ function Write-SentinelRecipeIndex {
     ) -join "`r`n"
     $Content | Set-Content -Path $Path -Encoding UTF8 -Force
 }
-
-
-
 function AutoStartWebSite {
-    param(
+    param (
+        [Parameter(Mandatory)]
         [string]$Path
     )
 
-    # GEEK FIX: Force the internal PyCharm stream to accept UTF8
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-#    $OutputEncoding = [System.Text.Encoding]::UTF8
-
-    # This specifically targets the PyCharm console buffer
-    if ($Host.Name -match 'JetBrains') {
-        $ExecutionContext.InvokeCommand.GetCommand('Set-Variable', 'Cmdlet').Invoke()
+    # 1. Administrator Privilege Check
+    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Host "--- CRITICAL: Admin privileges required ---" -ForegroundColor Red
+        return
     }
 
-    Write-Host "`n🚀 Preparing to launch Docusaurus..." -ForegroundColor Cyan
+    $FullSitePath = $Path.TrimEnd('\')
+    $ParentPath = Split-Path $FullSitePath -Parent
+    $FolderName = Split-Path $FullSitePath -Leaf
 
-    if (Test-Path $Path) {
-        Write-Host "🏠 Site Root: $Path" -ForegroundColor Gray
-        Write-Host "🦖 Spawning Development Server in a NEW window..." -ForegroundColor Green
-        if ($true){
-            # Use -EncodedCommand or -Command with explicit UTF8 settings for the child process
-            $Command = "chcp 65001 > `$null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location '$Path'; npx docusaurus start --host 0.0.0.0 --port 3000"
-
-            $ArgList = @("-NoExit", "-Command", $Command)
-
-            Start-Process powershell.exe -ArgumentList $ArgList
-
-        } else {
-            Set-Location $Path
-            npx docusaurus start --host 0.0.0.0 --port 3000
-            Write-Host "💡 Access locally at http://localhost:3000" -ForegroundColor Gray
+    # 2. Purge / Re-install Logic
+    if (-not (Test-Path (Join-Path $FullSitePath 'package.json'))) {
+        if (Test-Path $FullSitePath) {
+            Remove-Item -Path $FullSitePath -Recurse -Force -ErrorAction SilentlyContinue
         }
-
-    } else {
-        Write-Host "⚠️  Launch Failed: Path not found -> $Path" -ForegroundColor Red
+        if (-not (Test-Path $ParentPath)) {
+            New-Item -ItemType Directory -Path $ParentPath -Force | Out-Null
+        }
+        Push-Location $ParentPath
+        npx --yes create-docusaurus@latest $FolderName classic --skip-install
+        Pop-Location
     }
-}
 
-if ($false) {
+    # 3. Start Site
+    if (Test-Path $FullSitePath) {
+        Push-Location $FullSitePath
+        if (-not (Test-Path 'node_modules')) { npm install }
+        Pop-Location
 
-    Write-Host "`n  [LAUNCH] Spawning Docusaurus..." -ForegroundColor Green
-    $TargetSitePath = 'H:\MakeMeASammich\website'
-    AutoStartWebSite -Path $TargetSitePath
-
+        $Command = "Set-Location '$FullSitePath'; npx docusaurus start --host 0.0.0.0 --port 3000"
+        Start-Process powershell.exe -ArgumentList @('-NoExit', '-Command', $Command)
+    }
 }

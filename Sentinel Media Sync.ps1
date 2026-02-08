@@ -32,7 +32,7 @@ if (-not (Get-Module -ListAvailable powershell-yaml)) { Install-Module -Name pow
 Import-Module powershell-yaml
 
 # --- CONFIG & LOGGING ---
-$ConfigFilePath = Join-Path $PSScriptRoot 'config.yml'
+$ConfigFilePath = Join-Path $PSScriptRoot 'config2.0.yml'
 $YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
 $ConfigLogDir = Join-Path $PSScriptRoot $YamlData.Settings.'LogPath'
 if (-not (Test-Path $ConfigLogDir)) { New-Item $ConfigLogDir -ItemType Directory -Force | Out-Null }
@@ -134,7 +134,12 @@ foreach ($key in $lookupTable.Keys) {
     $ext = $master.Extension.ToLower()
     $origin = $ActiveLocs | Where-Object { $master.FullName.StartsWith($_.Path) } | Select-Object -First 1
 
-    if ($null -eq $origin -or ($origin.Role -match 'Web|Hybrid' -and $origin.Role -ne 'InPlace_Archive')) { continue }
+    # --- PHASE 2: ROUTING (Update) ---
+    # Ensure the script recognizes the unified SitePath as a 'protected' zone
+    if ($null -eq $origin -or ($origin.Role -match 'Web|Hybrid' -and $origin.Role -ne 'InPlace_Archive')) {
+        # Skip processing if the file is already within the Website structure
+        continue
+    }
 
     if ($master.DirectoryName -ne $LastDir) {
         Write-SentinelOdometer -Tag 'ROUTING' -Source $origin.Name -Path $master.DirectoryName -Current $p2Counter -Total $TotalGroups
