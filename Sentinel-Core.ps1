@@ -14,11 +14,24 @@ $Global:Icons = @{
 function Write-SentinelOdometer {
     param($Tag, $Source, $Path, $Current = 0, $Total = 0)
     $Percent = if ($Total -gt 0) { [Math]::Round(($Current / $Total) * 100) } else { 0 }
-    Write-Host "  $($Global:Icons.Arrow) " -NoNewline -ForegroundColor Gray
-    Write-Host "[$Tag] " -NoNewline -ForegroundColor Cyan
-    Write-Host "[$Source] " -NoNewline -ForegroundColor Gray
-    Write-Host "[$Current/$Total] " -NoNewline -ForegroundColor White
-    Write-Host " $Path" -ForegroundColor Gray
+
+    $Width = Get-SentinelWidth
+    # Construct the prefix (arrows and stats)
+    $Prefix = "  $($Global:Icons.Arrow) [$Tag] [$Source] [$Current/$Total] ($Percent%) "
+
+    # Calculate available space for the path to prevent wrapping
+    $MaxPathLen = $Width - $Prefix.Length - 1
+    $DisplayPath = if ($Path.Length -gt $MaxPathLen) {
+        "..." + $Path.Substring($Path.Length - $MaxPathLen + 3)
+    } else { $Path }
+
+    # Return to start of line, print everything, then pad the remainder with spaces
+    Write-Host "`r$Prefix" -NoNewline -ForegroundColor Cyan
+    Write-Host $DisplayPath -NoNewline -ForegroundColor Gray
+
+    $FinalLen = $Prefix.Length + $DisplayPath.Length
+    $Padding = $Width - $FinalLen
+    if ($Padding -gt 0) { Write-Host (" " * $Padding) -NoNewline }
 }
 
 function Get-SentinelWidth {
@@ -54,7 +67,13 @@ function Write-SentinelPhase0 {
         [ValidateSet('Sync', 'Web')]
         $JobType
     )
-
+    # Inside Write-SentinelPhase0 function in Sentinel-Core.ps1
+    $IsRelevant = if ($JobType -eq 'Web') {
+        $loc.Role -eq 'Hybrid_Archive'
+    } else {
+        # FIX: Use .Depth because that's where SentinelLocation class stores it
+        $loc.Depth -ge 0
+    }
     Write-Host '     STATUS      NAME                ROLE                PATH'
     foreach ($loc in $Locations) {
         $IsOnline = Test-Path $loc.Path
@@ -91,7 +110,9 @@ function Write-SentinelPhase0 {
         Write-Host '     ' -NoNewline
         Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
         Write-Host " [$($loc.Name.PadRight(16))]" -NoNewline
-        Write-Host " [$($loc.Role.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
+        $RoleDisplay = if ([string]::IsNullOrWhiteSpace($loc.Role)) { "N/A" } else { $loc.Role }
+        Write-Host " [$($RoleDisplay.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
+#        Write-Host " [$($loc.Role.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
         Write-Host $loc.Path -ForegroundColor Gray
     }
 }
@@ -248,7 +269,7 @@ function Build-WebPageFromTemplate {
         New-Item -Path $TargetFolder -ItemType Directory -Force | Out-Null
     }
 
-    # 2. Extract Primary Info (LastIndexOf preserves 'natural-body-wash')
+    # 2. Extract Primary Info
     $RawBase = $SourceFiles[0].BaseName
     $EscapedSep = [regex]::Escape($GroupSeparator)
     $CleanName = if ($RawBase -match $EscapedSep) {
@@ -265,8 +286,10 @@ function Build-WebPageFromTemplate {
         }
     }
 
-    # 4. Check Overwrite (Strict Boolean for PS 5.1)
-    $ShouldWrite = (-not (Test-Path $MdPath)) -or ($Overwrite -eq $true)
+    # 4. Check Overwrite
+    $ForceUpdate = ($Overwrite -eq $true) -or ($Overwrite -eq 'true')
+    $ShouldWrite = (-not (Test-Path $MdPath)) -or $ForceUpdate
+
     if (-not $ShouldWrite) { return 'SKIP' }
 
     # 5. Data Gathering
@@ -278,21 +301,18 @@ function Build-WebPageFromTemplate {
     foreach ($f in $SourceFiles) {
         $Ext = $f.Extension.ToLower()
 
-        # Images & Videos
         if ($Ext -match 'jpg|jpeg|png|webp|gif|heic|tif|tiff') {
             $MediaGallery += "![image]($($f.Name))`n`n"
         }
         elseif ($Ext -match 'mp4|mov|avi|mkv') {
             $MediaGallery += "### Video Native Playback`n<video controls style={{width: '100%'}} src='./$($f.Name)' />`n`n"
         }
-        # Instructions (Web/Docs)
         elseif ($Ext -eq '.md') {
             $Instructions += (Get-Content $f.FullName -Raw) -replace '(?s)^---.*?---', ''
         }
         elseif ($Ext -eq '.txt') {
             $Instructions += "`n" + (Get-Content $f.FullName -Raw) + "`n"
         }
-        # Metadata (Sidecars)
         elseif ($Ext -match 'json|xml|yml|yaml') {
             $Lang = $Ext.TrimStart('.')
             $RawMeta = Get-Content $f.FullName -Raw
@@ -300,35 +320,57 @@ function Build-WebPageFromTemplate {
         }
     }
 
-    # 6. REPLACEMENT ENGINE (Variable Based)
-    $FinalInstructions = "No instructions found."
-    if ($Instructions.Trim()) { $FinalInstructions = $Instructions }
+    # 6. REPLACEMENT ENGINE (Updated for Docusaurus v3 YAML safety)
+    $BodyContent = if ($null -ne $Instructions -and $Instructions -ne "") { $Instructions } else { 'No instructions found.' }
+    $FirstImgFile = $SourceFiles | Where-Object { $_.Extension -match 'jpg|jpeg|png|webp' } | Select-Object -First 1
 
-    $Tmpl = @(
-        "---",
-        "title: {{title}}",
-        "slug: {{slug}}",
-        "---",
-        "",
-        "# {{title}}",
-        "",
-        "{{primary_image}}",
-        "",
-        "## Instructions",
-        "{{instructions_list}}",
-        "",
-        "---",
-        "{{metadata_section}}"
-    ) -join "`r`n"
+    # --- PRESERVATION LOGIC ---
+    # If the source file is an index, we use the raw content instead of rebuilding YAML
+    if ($CleanName -eq 'index') {
+        $IndexFile = $SourceFiles | Where-Object { $_.Name -eq 'index.md' } | Select-Object -First 1
+        if ($null -ne $IndexFile) {
+            $RawContent = Get-Content $IndexFile.FullName -Raw
+            $RawContent | Set-Content -Path $MdPath -Encoding UTF8 -Force
+            return 'CREATED'
+        }
+    }
 
-    $FinalMD = $Tmpl
-    $FinalMD = $FinalMD.Replace('{{title}}', $DisplayTitle)
-    $FinalMD = $FinalMD.Replace('{{slug}}', $CleanName.ToLower())
-    $FinalMD = $FinalMD.Replace('{{primary_image}}', $MediaGallery)
-    $FinalMD = $FinalMD.Replace('{{instructions_list}}', $FinalInstructions)
+    $YamlLines = @('---')
+
+    # Primary fix: Use single quotes for both keys and values as requested
+    $YamlLines += "'title': '$($DisplayTitle.Replace("'", "''"))'"
+
+    # URL fix: Remove non-ASCII characters and use single quotes for slug
+    $SafeSlug = $CleanName.ToLower() -replace '[^a-z0-9-]', '-' -replace '-+', '-'
+    $YamlLines += "'slug': '$SafeSlug'"
+
+    if ($null -ne $FirstImgFile) {
+        $YamlLines += "'image': './$($FirstImgFile.Name)'"
+        $YamlLines += "'primary_image': './$($FirstImgFile.Name)'"
+    }
+
+    $YamlLines += '---'
+
+    # Combine YAML with the body structure
+    $Tmpl = ($YamlLines -join "`r`n") + @"
+
+# {{title}}
+
+{{media}}
+
+{{styled_body}}
+
+---
+{{metadata_section}}
+"@
+
+    # Apply final replacements
+    $FinalMD = $Tmpl.Replace('{{title}}', $DisplayTitle)
+    $FinalMD = $FinalMD.Replace('{{media}}', $MediaGallery)
+    $FinalMD = $FinalMD.Replace('{{styled_body}}', $BodyContent)
     $FinalMD = $FinalMD.Replace('{{metadata_section}}', $Metadata)
 
-    # 7. Write to NAS (Hardened)
+    # 7. Write to File
     $FinalMD | Set-Content -Path $MdPath -Encoding UTF8 -Force
 
     return 'CREATED'
@@ -336,34 +378,49 @@ function Build-WebPageFromTemplate {
 
 function Write-SentinelCategoryYaml {
     param($FolderPath, $FolderName, $Force)
-    if (-not (Test-Path $FolderPath)) { New-Item -ItemType Directory -Path $FolderPath -Force | Out-Null }
+    if (-not (Test-Path $FolderPath)) {
+        New-Item -ItemType Directory -Path $FolderPath -Force | Out-Null
+    }
     $Path = Join-Path $FolderPath "_category_.yml"
-    "label: '$FolderName'`nlink:`n  type: generated-index" | Set-Content $Path -Encoding UTF8 -Force
+
+    $Content = @(
+        "'label': '$FolderName'",
+        "'link':",
+        "  'type': 'generated-index'"
+    ) -join "`r`n"
+
+    $Content | Set-Content $Path -Encoding UTF8 -Force
 }
 
 function Write-SentinelRecipeIndex {
     param([string]$TargetRoot, [int]$GroupCount)
 
-    # FIX: Create subdirectories (docs/recipes) if they are missing
     if (-not (Test-Path $TargetRoot)) {
         New-Item -ItemType Directory -Path $TargetRoot -Force | Out-Null
     }
 
-    $Path = Join-Path $TargetRoot "index.md"
-    $PrettyDate = Get-Date -Format "MMMM dd, yyyy"
+    $Path = Join-Path $TargetRoot 'index.md'
+    $PrettyDate = Get-Date -Format 'MMMM dd, yyyy'
+    $DirName = Split-Path $TargetRoot -Leaf
+    $LowerDir = $DirName.ToLower()
+
     $Content = @(
-        "---",
-        "title: Recipe Library",
-        "sidebar_position: 1",
-        "slug: /recipes",
-        "---",
-        "",
-        "# Recipe Vault",
+        '---',
+        "'id': '$LowerDir-index'",
+        "'title': '$DirName'",
+        "'sidebar_label': '$DirName'",
+        "'sidebar_position': 1",
+        "'slug': '/'",
+        '---',
+        '',
+        "# $DirName Vault",
         "Categories: $GroupCount",
         "Last Updated: $PrettyDate"
     ) -join "`r`n"
+
     $Content | Set-Content -Path $Path -Encoding UTF8 -Force
 }
+
 function AutoStartWebSite {
     param (
         [Parameter(Mandatory)]

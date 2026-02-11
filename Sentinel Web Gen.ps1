@@ -41,10 +41,11 @@ foreach ($loc in $WebLocations) {
 
     Write-Host "`n>>> Syncing: $($loc.Name) Source -> Unified Website" -ForegroundColor White
 
-    # 1. Path Logic: Map to subfolders like docs\recipes, docs\shop, or docs\gallery
+    # 1. Path Logic: Map to independent root folders
     $SubDir = if ($loc.WebSubFolder) { $loc.WebSubFolder } else { 'recipes' }
-    $WebDocsRoot = Join-Path $loc.SitePath "docs\$SubDir"
 
+    # Corrected: Do not join with "docs", join directly to SitePath
+    $WebDocsRoot = Join-Path $loc.SitePath $SubDir
     if (-not (Test-Path $WebDocsRoot)) {
         New-Item -Path $WebDocsRoot -ItemType Directory -Force | Out-Null
     }
@@ -56,7 +57,6 @@ foreach ($loc in $WebLocations) {
             Get-ChildItem $WebDocsRoot -Exclude '_category_.yml' -Recurse | Remove-Item -Force -Recurse
         }
     }
-
     # 2. CATEGORY MAPPING
     Write-Host "  $($Global:Icons.Arrow) Mapping categories..." -ForegroundColor Gray
     $SourceFolders = Get-ChildItem -Path $loc.Path -Directory -Recurse -ErrorAction SilentlyContinue
@@ -71,8 +71,9 @@ foreach ($loc in $WebLocations) {
         $ProgressMsg = "`r  $($Global:Icons.Check) [INDEXING] [$($stats.Scanned)/$($SourceFolders.Count)] $RelPath"
         Write-Host $ProgressMsg.PadRight($SafeWidth) -NoNewline -ForegroundColor Gray
 
-        if (-not (Test-Path $CategoryFile)) {
-            Write-SentinelCategoryYaml -FolderPath $TargetWebDir -FolderName $dir.Name -Force $false
+        # FIX: Check for -or $Overwrite (or $true) to force update existing category files
+        if ((-not (Test-Path $CategoryFile)) -or $true) {
+            Write-SentinelCategoryYaml -FolderPath $TargetWebDir -FolderName $dir.Name -Force $true
             $stats.Created++
         } else {
             $stats.Skipped++
@@ -116,7 +117,6 @@ foreach ($loc in $WebLocations) {
 
     $stats = [PSCustomObject]@{ Scanned=0; Created=0; Skipped=0; Errors=0 }
     $ProcessTag = if ($loc.Template -eq 'recipe-card') { 'RECIPE' } else { 'GROUP ' }
-
     foreach ($group in $FileGroups) {
         $RelPath = $group.Group[0].DirectoryName.Replace($loc.Path, "").TrimStart('\')
         $TargetWebDir = Join-Path $WebDocsRoot $RelPath
@@ -128,9 +128,18 @@ foreach ($loc in $WebLocations) {
         $GroupMsg = "`r  $($Global:Icons.Arrow) [$ProcessTag] [$($CurrentCount.ToString().PadLeft($($FileGroups.Count.ToString().Length)))/$($FileGroups.Count)] $LiveStats"
         Write-Host $GroupMsg.PadRight($SafeWidth) -NoNewline -ForegroundColor Cyan
 
-        if (-not (Test-Path $TargetFile)) {
-            $Result = Build-WebPageFromTemplate -SourceFiles $group.Group -TargetFolder $TargetWebDir -TemplateType $loc.Template -Overwrite $false
-            if ($Result -eq 'CREATED') { $stats.Created++ } else { $stats.Errors++ }
+        # Explicitly forcing true here will resolve the '472 Preserved' issue
+        $ForceFix = $true
+        $ShouldProcess = (-not (Test-Path $TargetFile)) -or $ForceFix
+
+        if ($ShouldProcess) {
+            $Result = Build-WebPageFromTemplate -SourceFiles $group.Group -TargetFolder $TargetWebDir -TemplateType $loc.Template -Overwrite $true
+
+            if ($Result -eq 'CREATED') {
+                $stats.Created++
+            } else {
+                $stats.Errors++
+            }
         } else {
             $stats.Skipped++
         }

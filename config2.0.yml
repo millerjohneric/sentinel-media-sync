@@ -40,7 +40,7 @@
     - 'System Volume Information'
 
 'FileTypes':
-  'Images': ['.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff']
+  'Images': ['.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff', '.heic']
   'RAWs': ['.nef', '.cr2', '.arw', '.dng']
   'Videos': ['.mp4', '.mov', '.avi', '.mkv']
   'Audio': ['.mp3', '.wav', '.flac', '.m4a']
@@ -94,6 +94,7 @@
 
   - 'Name': 'Visual_Registry'
     'Path': 'C:\Source\GEEK\Photo_Archive\Visual_Registry'
+    'Role': 'InPlace_Archive'
     'MonitorDepth': 2
     'PurgeOrphan': false
     'RootType': 'Hybrid'
@@ -134,7 +135,7 @@
 
 # --- PICKUP ZONES (Loading Zones) ---
   - 'Name': 'John'
-    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\John'
+    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\John'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -144,7 +145,7 @@
       - 'Chrono'
 
   - 'Name': 'Roena'
-    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\Roena'
+    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\Roena'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -154,7 +155,7 @@
       - 'Chrono'
 
   - 'Name': 'BigAssTablet'
-    'Path': 'C:\Source\GEEK\Sorting_Limbo\-in-box\BigAssTablet'
+    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\BigAssTablet'
     'Role': 'Pickup'
     'MonitorDepth': 99
     'SortDepth': 0
@@ -214,43 +215,45 @@
     'RootType': 'Recipes'
     'MonitorDepth': 99
     'SortDepth': null
-    'Overwrite': false
+    'Overwrite': true
     'PurgeOrphan': true
     'AutoStart': true
     'GroupSeparator': '-.-'
     'Structure':
       - 'Event'
 
-  - 'Name': 'Miller_Made_Craft'
-    'Path': 'C:\Source\GEEK\Miller_Made_Craft\products'
-    'Role': 'Hybrid_Archive'
-    'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'shop'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'product-showcase'
-    'RootType': 'Recipes'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': false
-    'PurgeOrphan': false
-    'AutoStart': false
-    'GroupSeparator': '-.-'
-    'Structure':
-      - 'Event'
-
-  - 'Name': 'Photography_Portfolio'
-    'Path': 'C:\Source\GEEK\Photography_Hobby\_RAW'
-    'Role': 'Hybrid_Archive'
-    'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'gallery'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'masonry-grid'
-    'RootType': 'Recipes'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': false
-    'PurgeOrphan': true
-    'AutoStart': false
-    'GroupSeparator': '-.-'
-    'Structure':
-      - 'Event'
+#
+#  - 'Name': 'Miller_Made_Craft'
+#    'Path': 'C:\Source\GEEK\Miller_Made_Craft\products'
+#    'Role': 'Hybrid_Archive'
+#    'SitePath': 'C:\Source_Studio\website'
+#    'WebSubFolder': 'shop'
+#    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+#    'Template': 'product-showcase'
+#    'RootType': 'Recipes'
+#    'MonitorDepth': 99
+#    'SortDepth': null
+#    'Overwrite': false
+#    'PurgeOrphan': false
+#    'AutoStart': false
+#    'GroupSeparator': '-.-'
+#    'Structure':
+#      - 'Event'
+#
+#  - 'Name': 'Photography_Portfolio'
+#    'Path': 'C:\Source\GEEK\Photography_Hobby\_RAW'
+#    'Role': 'Hybrid_Archive'
+#    'SitePath': 'C:\Source_Studio\website'
+#    'WebSubFolder': 'gallery'
+#    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+#    'Template': 'masonry-grid'
+#    'RootType': 'Recipes'
+#    'MonitorDepth': 99
+#    'SortDepth': null
+#    'Overwrite': false
+#    'PurgeOrphan': true
+#    'AutoStart': false
+#    'GroupSeparator': '-.-'
+#    'Structure':
+#      - 'Event'
+#

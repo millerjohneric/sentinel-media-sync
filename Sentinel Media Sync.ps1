@@ -55,12 +55,13 @@ $globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 # --- DATA CLASS ---
 class SentinelLocation {
-    [string]$Path; [string]$Name; [string]$Role; [bool]$Enabled; [bool]$PurgeOrphan; [int]$Depth
+    [string]$Path; [string]$Name; [string]$Role; [bool]$Enabled; [bool]$PurgeOrphan; [int]$MonitorDepth # Changed from Depth to MonitorDepth
     SentinelLocation([hashtable]$config) {
         $this.Path = if ($config['Path']) { $config['Path'].Replace('/', '\').TrimEnd('\') } else { '' }
         $this.Name = $config['Name']; $this.Role = $config['Role']
-        $this.Depth = if ($null -ne $config['MonitorDepth']) { $config['MonitorDepth'] } else { 1 }
-        $this.Enabled = ($this.Depth -ge 0)
+        # Assign to MonitorDepth to match the Core library's expectations
+        $this.MonitorDepth = if ($null -ne $config['MonitorDepth']) { $config['MonitorDepth'] } else { 1 }
+        $this.Enabled = ($this.MonitorDepth -ge 0)
         $this.PurgeOrphan = if ($null -ne $config['PurgeOrphan']) { [bool]$config['PurgeOrphan'] } else { $false }
     }
 }
@@ -105,15 +106,22 @@ foreach ($loc in $ActiveLocs) {
     foreach ($file in $allFiles) {
         $ext = $file.Extension.ToLower()
         if ($MediaExts -notcontains $ext) { continue }
-        Write-SentinelOdometer -Tag 'SCAN' -Source $loc.Name -Path $file.Name
+
+        # INCREMENT FIRST
         if ($ImgExts -contains $ext) { $inv.Img++ }
         elseif ($RawExts -contains $ext) { $inv.RAW++ }
         elseif ($VidExts -contains $ext) { $inv.Vid++ }
         elseif ($AudExts -contains $ext) { $inv.Aud++ }
         elseif ($ext -eq '.xmp') { $inv.Side++ }
+
+        $stats.Scanned++
+
+        # NOW CALL ODOMETER with the updated $stats.Scanned
+        Write-SentinelOdometer -Tag 'SCAN' -Source $loc.Name -Path $file.Name -Current $stats.Scanned -Total 0
+
         $fileKey = "$($file.Length)_$($file.Name)"
         if (-not $lookupTable.ContainsKey($fileKey)) { $lookupTable[$fileKey] = New-Object System.Collections.Generic.List[System.IO.FileInfo] }
-        $lookupTable[$fileKey].Add($file); $stats.Scanned++
+        $lookupTable[$fileKey].Add($file)
     }
 }
 Clear-SentinelOdometer
@@ -123,6 +131,7 @@ $F_Vid = Format-SentinelNum $inv.Vid
 $F_Aud = Format-SentinelNum $inv.Aud
 $F_Side = Format-SentinelNum $inv.Side
 Write-Host "  >> [SCAN    ] SUCCESS: Images: $F_Img | RAWs: $F_Raw | Videos: $F_Vid | Audio: $F_Aud | Sidecars: $F_Side" -ForegroundColor Gray
+
 
 # --- PHASE 2: ROUTING ---
 Write-Host "`nPHASE 2: ROUTING MEDIA..." -ForegroundColor White
@@ -135,56 +144,65 @@ foreach ($key in $lookupTable.Keys) {
     $origin = $ActiveLocs | Where-Object { $master.FullName.StartsWith($_.Path) } | Select-Object -First 1
 
     # --- PHASE 2: ROUTING (Update) ---
-    # Ensure the script recognizes the unified SitePath as a 'protected' zone
-    if ($null -eq $origin -or ($origin.Role -match 'Web|Hybrid' -and $origin.Role -ne 'InPlace_Archive')) {
-        # Skip processing if the file is already within the Website structure
-        continue
-    }
-
-    if ($master.DirectoryName -ne $LastDir) {
-        Write-SentinelOdometer -Tag 'ROUTING' -Source $origin.Name -Path $master.DirectoryName -Current $p2Counter -Total $TotalGroups
-        $LastDir = $master.DirectoryName
-    }
-
-    $mDate = Get-MediaDate -file $master
-    $datePath = Join-Path $mDate.ToString('yyyy') $mDate.ToString('MM MMMM')
-
-    if ($origin.Role -eq 'InPlace_Archive') {
-        $Rel = $master.FullName.Replace($origin.Path, '').TrimStart('\'); $Parts = $Rel -split '\\'
-        $targetRoot = if ($Parts.Count -ge 2) { Join-Path $origin.Path (Join-Path $Parts[0] $Parts[1]) } else { $master.DirectoryName }
-        if ($master.DirectoryName -match '\\\d{4}\\\d{2}\s\w+$') { $stats.AtHome++; continue }
-    } else {
-        $RoleType = if ($RawExts -contains $ext) { 'RAW_Archive' } else { 'Photo_Archive' }
-        $targetRoot = ($ActiveLocs | Where-Object { $_.Role -eq $RoleType } | Select-Object -First 1).Path
-    }
-
-    if ($targetRoot) {
-        $finalPath = Join-Path $targetRoot $datePath
-        if (-not $DryRun) {
-            if (-not (Test-Path $finalPath)) { New-Item $finalPath -ItemType Directory -Force | Out-Null }
-            try {
-                Move-Item $master.FullName $finalPath -Force -ErrorAction Stop
-                $stats.Moved++
-                if ($ImgExts -contains $ext) { $p2Inv.Img++ }
-                elseif ($RawExts -contains $ext) { $p2Inv.RAW++ }
-                elseif ($VidExts -contains $ext) { $p2Inv.Vid++ }
-                elseif ($AudExts -contains $ext) { $p2Inv.Aud++ }
-                elseif ($ext -eq '.xmp') { $p2Inv.Side++ }
-            } catch { $stats.Errors++ }
+    if ($lookupTable.Count -gt 0) {
+        Write-Host "`nPHASE 2: ROUTING MEDIA..." -ForegroundColor White
+        # ... existing Phase 2 loop ...
+        # Ensure the script recognizes the unified SitePath as a 'protected' zone
+        if ($null -eq $origin -or ($origin.Role -match 'Web|Hybrid' -and $origin.Role -ne 'InPlace_Archive')) {
+            # Skip processing if the file is already within the Website structure
+            continue
         }
+
+        if ($master.DirectoryName -ne $LastDir) {
+            Write-SentinelOdometer -Tag 'ROUTING' -Source $origin.Name -Path $master.DirectoryName -Current $p2Counter -Total $TotalGroups
+            $LastDir = $master.DirectoryName
+        }
+
+        $mDate = Get-MediaDate -file $master
+        $datePath = Join-Path $mDate.ToString('yyyy') $mDate.ToString('MM MMMM')
+
+        if ($origin.Role -eq 'InPlace_Archive') {
+            $Rel = $master.FullName.Replace($origin.Path, '').TrimStart('\'); $Parts = $Rel -split '\\'
+            $targetRoot = if ($Parts.Count -ge 2) { Join-Path $origin.Path (Join-Path $Parts[0] $Parts[1]) } else { $master.DirectoryName }
+            if ($master.DirectoryName -match '\\\d{4}\\\d{2}\s\w+$') { $stats.AtHome++; continue }
+        } else {
+            $RoleType = if ($RawExts -contains $ext) { 'RAW_Archive' } else { 'Photo_Archive' }
+            $targetRoot = ($ActiveLocs | Where-Object { $_.Role -eq $RoleType } | Select-Object -First 1).Path
+        }
+
+        if ($targetRoot) {
+            $finalPath = Join-Path $targetRoot $datePath
+            if (-not $DryRun) {
+                if (-not (Test-Path $finalPath)) { New-Item $finalPath -ItemType Directory -Force | Out-Null }
+                try {
+                    Move-Item $master.FullName $finalPath -Force -ErrorAction Stop
+                    $stats.Moved++
+                    if ($ImgExts -contains $ext) { $p2Inv.Img++ }
+                    elseif ($RawExts -contains $ext) { $p2Inv.RAW++ }
+                    elseif ($VidExts -contains $ext) { $p2Inv.Vid++ }
+                    elseif ($AudExts -contains $ext) { $p2Inv.Aud++ }
+                    elseif ($ext -eq '.xmp') { $p2Inv.Side++ }
+                } catch { $stats.Errors++ }
+            }
+        }
+    } else {
+        Write-Host "`nPHASE 2: ROUTING skipped (No files to move)." -ForegroundColor Gray
     }
+
 }
 Clear-SentinelOdometer
-$F_Img = Format-SentinelNum $inv.Img
-$F_Raw = Format-SentinelNum $inv.RAW
-$F_Vid = Format-SentinelNum $inv.Vid
-$F_Aud = Format-SentinelNum $inv.Aud
-$F_Side = Format-SentinelNum $inv.Side
-Write-Host "  >> [SCAN    ] SUCCESS: Images: $F_Img | RAWs: $F_Raw | Videos: $F_Vid | Audio: $F_Aud | Sidecars: $F_Side" -ForegroundColor Gray
+# Use $p2Inv instead of $inv for accuracy
+$F_Img = Format-SentinelNum $p2Inv.Img
+$F_Raw = Format-SentinelNum $p2Inv.RAW
+$F_Vid = Format-SentinelNum $p2Inv.Vid
+$F_Aud = Format-SentinelNum $p2Inv.Aud
+$F_Side = Format-SentinelNum $p2Inv.Side
+Write-Host "  >> [MOVE    ] SUCCESS: Images: $F_Img | RAWs: $F_Raw | Videos: $F_Vid | Audio: $F_Aud | Sidecars: $F_Side" -ForegroundColor Gray
+
 
 # --- PHASE 3: REUNITING & ORPHAN CHECK ---
 if ($script:YamlData.'Settings'.'DisableSidecarReunite' -eq $true) {
-    Write-Host "`nPHASE 3: REUNITING SIDECARS (DISABLED via Config)" -ForegroundColor Yellow
+    Write-Host "  >> [REUNITE ] DISABLED via Config" -ForegroundColor Yellow
 } else {
     Write-Host "`nPHASE 3: REUNITING SIDECARS..." -ForegroundColor Cyan
     $p3Counter = 0
@@ -237,7 +255,7 @@ if ($script:YamlData.'Settings'.'DisableSidecarReunite' -eq $true) {
 
 # --- PHASE 4: JUNK PURGE ---
 if ($script:YamlData.'Settings'.'DisableJunkPurge' -eq $true) {
-    Write-Host "`nPHASE 4: JUNK PURGE (DISABLED via Config)" -ForegroundColor Yellow
+    Write-Host "  >> [PURGE   ] DISABLED via Config" -ForegroundColor Yellow
 } else {
     Write-Host "`nPHASE 4: JUNK PURGE..." -ForegroundColor Red
     $p4Counter = 0; $p4Purged = 0
@@ -279,6 +297,8 @@ Errors:         $(Format-SentinelNum $stats.Errors)
 Duration: $($globalStopwatch.Elapsed.ToString('hh\:mm\:ss'))
 "@
 
-Write-Host "`n$Report" -ForegroundColor Gray
+$ReportColor = if ($stats.Errors -gt 0) { 'Red' } elseif ($stats.Moved -gt 0) { 'Green' } else { 'Gray' }
+Write-Host "`n$Report" -ForegroundColor $ReportColor
+
 Send-SentinelReport -ReportBody $Report -JobName "Sync"
 Stop-Transcript
