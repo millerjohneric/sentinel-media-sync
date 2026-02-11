@@ -72,8 +72,8 @@ foreach ($loc in $WebLocations) {
         Write-Host $ProgressMsg.PadRight($SafeWidth) -NoNewline -ForegroundColor Gray
 
         # FIX: Check for -or $Overwrite (or $true) to force update existing category files
-        if ((-not (Test-Path $CategoryFile)) -or $true) {
-            Write-SentinelCategoryYaml -FolderPath $TargetWebDir -FolderName $dir.Name -Force $true
+        if ((-not (Test-Path $CategoryFile)) -or $loc.Overwrite) {
+            Write-SentinelCategoryYaml -FolderPath $TargetWebDir -FolderName $dir.Name -Force $loc.Overwrite
             $stats.Created++
         } else {
             $stats.Skipped++
@@ -128,10 +128,7 @@ foreach ($loc in $WebLocations) {
         $GroupMsg = "`r  $($Global:Icons.Arrow) [$ProcessTag] [$($CurrentCount.ToString().PadLeft($($FileGroups.Count.ToString().Length)))/$($FileGroups.Count)] $LiveStats"
         Write-Host $GroupMsg.PadRight($SafeWidth) -NoNewline -ForegroundColor Cyan
 
-        # Explicitly forcing true here will resolve the '472 Preserved' issue
-        $ForceFix = $true
-        $ShouldProcess = (-not (Test-Path $TargetFile)) -or $ForceFix
-
+        $ShouldProcess = (-not (Test-Path $TargetFile)) -or $loc.Overwrite
         if ($ShouldProcess) {
             $Result = Build-WebPageFromTemplate -SourceFiles $group.Group -TargetFolder $TargetWebDir -TemplateType $loc.Template -Overwrite $true
 
