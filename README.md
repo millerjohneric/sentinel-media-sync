@@ -1,90 +1,53 @@
-......
-# Sentinel Media Sync v12.17
-### *The Streaming Odometer Engine*
+## Sentinel Media Sync & Source Studio Project Overview
 
-Sentinel is a high-performance PowerShell automation suite designed for 'Live-Look' media management. It utilizes a Streaming Pipeline to provide instant feedback and real-time junk purging across massive photo/video libraries without the overhead of bulk indexing.
+This project is a sophisticated media management and documentation ecosystem designed to automate the organization of digital assets and the generation of a centralized, searchable web portal using Docusaurus. It bridges the gap between raw file storage and an accessible, visually organized digital archive.
 
 ---
 
-## 📂 1. System Inventory
-* **'Sentinel Media Sync.ps1'**: The primary streaming engine.
-* **'config.yml'**: Mission control. Uses single-quote keys and no inline comments.
-* **'Sentinel-Register-Task.ps1'**: Schedules the 02:00 AM daily sync.
-* **'Undo-Last-Evacuation.ps1'**: Emergency restoration script for accidental moves.
-* **'Sentinel_Session.log'**: Full transcript flight recorder.
+### Core Components
+
+* **Sentinel-Core.ps1 (v4.7)**: The central library providing shared UI helpers, security/email modules, and core file logic like sidecar reunification and template injection.
+* **Sentinel Media Sync.ps1 (v17.2)**: The primary engine for organizing media. It validates directory integrity, routes files from "Pickup" zones to permanent archives, and reunites sidecar metadata.
+* **Sentinel Web Gen.ps1 (v20.6)**: The web generation layer that transforms archived file structures into MDX documentation, manages Docusaurus configurations, and handles site seeding.
+* **config2.0.yml**: The central "brain" of the project where all directory paths, file type associations, and archive roles are defined.
 
 ---
 
-## ⚙️ 2. Advanced Purge Logic (Phase 4)
-Phase 4 operates on a 'Two-Pass Sentinel' model to ensure drive health and deep cleaning:
+###  Project Structure & Logic
 
-### **Pass A: The Junk Scan (Live Odometer)**
-Instead of a silent batch delete, Sentinel streams every file through a dynamic odometer.
-* **Heartbeat Counter**: Displays (X files...) to confirm the drive is responsive.
-* **Cold Storage Skip**: Folders older than 365 days (configurable) are acknowledged as 'Cold Storage' and bypassed instantly.
-* **Junk Target**: Specifically hunts files defined in the Junk list (e.g., Thumbs.db, desktop.ini).
-
-### **Pass B: Recursive Pruning**
-Once junk is removed, Sentinel performs a 'Deepest-First' search for empty folders. Removing a junk file often 'unlocks' a folder for deletion, causing a chain reaction that collapses empty directory trees.
+| Feature | Description |
+| --- | --- |
+| **Pickup Zones** | Monitored directories (local or network shares) where new media is initially placed. |
+| **Hybrid Archives** | Specific destinations that serve both as long-term storage and as source material for the Docusaurus website. |
+| **Sidecar Reunification** | Logic that automatically pairs `.yml` or `.xmp` metadata files with their corresponding media assets (e.g., photos or videos). |
+| **Dynamic Nav Cards** | A React-based homepage that automatically generates navigation cards based on active archives defined in the YAML config. |
 
 ---
 
-## 🛠️ 3. Configuration ('config.yml')
-**Strict Formatting Rules:**
-1. **No Inline Comments**: Do not place # comments on the same line as keys or values.
-2. **Single Quotes**: Use single quotes for all key/value assignments.
+###  Setup & Usage
 
-'Settings':
-  'DryRun': 'false'
-  'SkipDays': '365'
+####  1. Prerequisites
 
-'Junk':
-  - 'Thumbs.db'
-  - 'desktop.ini'
-  - '.DS_Store'
+* **PowerShell 5.1+**
+* **Node.js & npm** (for Docusaurus)
+* **powershell-yaml** module: `Install-Module powershell-yaml`
 
-'Exclusions':
-  'IgnoreFolders':
-    - '.webaxs'
-    - 'temp'
-  'IgnoreFiles':
-    - 'metadata.yml'
+####  2. Configuration
 
----
+Modify `config2.0.yml` to define your specific environment:
 
-## 📊 4. The Live Dashboard
-The console uses a dynamic width odometer to prevent stacking and provide real-time status:
+* Set the `GitHub_Repo` and `Data_Root` paths.
+* Define your `Locations` with appropriate `Role` types (e.g., `Pickup`, `Hybrid_Archive`, `Video_Archive`).
+* Configure `EmailSettings` for automated mission reports.
 
-| Status | Color | Meaning |
-| :--- | :--- | :--- |
-| **Scanning** | **Cyan** | Active directory being streamed with a file heartbeat. |
-| **[SKIPPED]** | **DarkGray** | Folder is in 'Cold Storage' (Older than the Skip threshold). |
-| **[DELETED]** | **Red** | A specific junk file was found and removed. |
-| **[REMOVED EMPTY]** | **DarkGray** | An empty directory tree has been collapsed. |
-| **>> Cleaned** | **Green** | Target location has been fully processed. |
+####  3. Running the System
+
+1. **Health Check**: Run `Sentinel Health Check.ps1` to ensure all network shares and local paths are online.
+2. **Sync Media**: Run `Sentinel Media Sync.ps1` to organize raw files and perform sidecar re-unification.
+3. **Generate Web**: Run `Sentinel Web Gen.ps1` to build the documentation site and start the Docusaurus server.
 
 ---
 
-## 🚀 5. Getting Started
+###  Security & Reporting
 
-### **Installation**
-1. **Clone the Repository**:
-   git clone H:/sentinel-media-sync
-2. **Verify Paths**: Ensure your 'config.yml' points to valid Anchor and Source locations.
-3. **Permissions**: Run PowerShell as Administrator to ensure Remove-Item has authority over system files.
-
-### **Deployment**
-Run the main script manually once to verify connectivity:
-powershell: ./'Sentinel Media Sync.ps1'
-
-To automate the mission, execute the registrar:
-powershell: ./Sentinel-Register-Task.ps1
-
----
-
-## 🚑 6. Recovery: The "Oops" Button
-If Sentinel "Evacuates" files to the Archive that you want back:
-1. **Locate** 'Undo-Last-Evacuation.ps1' in the script directory.
-2. **Execute** the script with PowerShell.
-3. **Result**: Every file listed in the most recent 'recovery_map.csv' is moved back to its original location, and the folders are recreated if necessary.
-......
+The system includes an encrypted credential manager for GMail App Passwords, allowing it to send HTML-formatted mission reports upon completion of sync or generation tasks.

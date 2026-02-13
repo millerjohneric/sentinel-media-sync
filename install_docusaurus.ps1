@@ -6,9 +6,9 @@ $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
 # 1. Setup Absolute Paths
-$ParentPath = "C:\MakeMeASammich"
+$ParentPath = "C:\Source_Studio"
 $SiteFolderName = "website"
-$FullSitePath = "C:\MakeMeASammich\website"
+$FullSitePath = "C:\Source_Studio\website"
 
 Write-Host "--- Starting Docusaurus installation for: $FullSitePath ---" -ForegroundColor Cyan
 

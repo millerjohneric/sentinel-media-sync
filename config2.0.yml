@@ -20,6 +20,8 @@
 'Settings':
   'LogPath': '_log'
   'TemplateDir': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync\templates'
+  'MonitorDepth': 3
+  'PurgeWebsite': false
   'DryRun': false
   'GlobalOverwrite': true
   'EmailSettings':
@@ -52,18 +54,19 @@
     - 'desktop.ini'
     - '.DS_Store'
     - 'ehthumbs.db'
-  'Recipes':
+  'WebContent':
     - 'Images'
     - 'Docs'
     - 'Sidecars'
     - 'Web'
     - '.mp4'
+    - '.yml'
 
 'Locations':
 # --- ARCHIVES (Destinations) ---
-  - 'Name': 'Chronicles_Archive'
-    'Path': 'C:\Source\GEEK\Photo_Archive\Chronicles'
-    'Role': 'Photo_Archive'
+  - 'Name': 'timeline'
+    'Path': 'C:\Source\GEEK\Photo_Archive\timeline'
+    'Role': 'timeline'
     'MonitorDepth': 1
     'SortDepth': 1
     'RootType': 'Photos'
@@ -124,7 +127,7 @@
       - 'Chrono'
 
   - 'Name': 'Sonic_Discography'
-    'Path': 'C:\Source\GEEK\Music_Harmonics\Sonic_Discography'
+    'Path': 'C:\Source\GEEK\Music\Sonic_Discography'
     'Role': 'Audio_Archive'
     'MonitorDepth': 0
     'SortDepth': 1
@@ -204,56 +207,70 @@
     'Structure':
       - 'Chrono'
 
-# --- SOURCE STUDIO ENGINE (Unified Site) ---
-  - 'Name': 'Recipes_Manna'
-    'Path': 'C:\Source\GEEK\Recipes_Manna\original-recipes'
-    'Role': 'Hybrid_Archive'
+  - 'Name': 'Source Studio Engine'
+    'Path': 'C:\Source\GEEK\Sentinel\website\docs'
+    'Role': 'Website'
     'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'recipes'
+    'WebSubFolder': 'docs'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'recipe-card'
-    'RootType': 'Recipes'
+    'Template': 'recipe-base'
+    'RootType': 'web-docs'
     'MonitorDepth': 99
     'SortDepth': null
-    'Overwrite': false
+    'Overwrite': true
+    'PurgeOrphan': true
+    'AutoStart': true
+    'GroupSeparator': '-.-'
+    'Structure':
+     - 'Event'
+
+  - 'Name': 'Culinary Cuisine'
+    'Path': 'C:\Source\GEEK\culinary-cuisine\website'
+    'Role': 'Website'
+    'SitePath': 'C:\Source_Studio\website'
+    'WebSubFolder': 'culinary-cuisine'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'recipe-card'
+    'RootType': 'web-culinary'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': true
     'PurgeOrphan': true
     'AutoStart': true
     'GroupSeparator': '-.-'
     'Structure':
       - 'Event'
 
-#
-#  - 'Name': 'Miller_Made_Craft'
-#    'Path': 'C:\Source\GEEK\Miller_Made_Craft\products'
-#    'Role': 'Hybrid_Archive'
-#    'SitePath': 'C:\Source_Studio\website'
-#    'WebSubFolder': 'shop'
-#    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-#    'Template': 'product-showcase'
-#    'RootType': 'Recipes'
-#    'MonitorDepth': 99
-#    'SortDepth': null
-#    'Overwrite': false
-#    'PurgeOrphan': false
-#    'AutoStart': false
-#    'GroupSeparator': '-.-'
-#    'Structure':
-#      - 'Event'
-#
-#  - 'Name': 'Photography_Portfolio'
-#    'Path': 'C:\Source\GEEK\Photography_Hobby\_RAW'
-#    'Role': 'Hybrid_Archive'
-#    'SitePath': 'C:\Source_Studio\website'
-#    'WebSubFolder': 'gallery'
-#    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-#    'Template': 'masonry-grid'
-#    'RootType': 'Recipes'
-#    'MonitorDepth': 99
-#    'SortDepth': null
-#    'Overwrite': false
-#    'PurgeOrphan': true
-#    'AutoStart': false
-#    'GroupSeparator': '-.-'
-#    'Structure':
-#      - 'Event'
-#
+  - 'Name': 'jems-tones'
+    'Path': 'C:\Source\GEEK\Photography_Hobby\website'
+    'Role': 'Website'
+    'SitePath': 'C:\Source_Studio\website'
+    'WebSubFolder': 'jems-tones'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'masonry-grid'
+    'RootType': 'web-gallery'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': true
+    'PurgeOrphan': true
+    'AutoStart': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
+
+  - 'Name': 'millermade-handcrafted'
+    'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
+    'Role': 'Website'
+    'SitePath': 'C:\Source_Studio\website'
+    'WebSubFolder': 'millermade-handcrafted'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'hand-crafted'
+    'RootType': 'web-shop'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': true
+    'PurgeOrphan': true
+    'AutoStart': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'

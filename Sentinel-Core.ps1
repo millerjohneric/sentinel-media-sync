@@ -1,51 +1,108 @@
 # ==============================================================================
-# Sentinel Core Library v3.0 (PS 5.1 Hardened)
+# Sentinel Core Library v5.1 [MDX ESCAPE FIX]
 # ==============================================================================
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
-$PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
+# Global Icons for consistent UI
 $Global:Icons = @{
-    Arrow    = [char]0x2192
-    Broom    = [char]0x232B
-    Check    = [char]0x221A
+    'Arrow'   = [char]0x2192
+    'Check'   = [char]0x2714
+    'Warning' = [char]0x26A0
+    'Error'   = [char]0x2718
 }
 
-function Write-SentinelOdometer {
-    param($Tag, $Source, $Path, $Current = 0, $Total = 0)
-    $Percent = if ($Total -gt 0) { [Math]::Round(($Current / $Total) * 100) } else { 0 }
+function Global:Build-WebPageFromTemplate {
+    param($SourceFiles, $TargetFolder, $TemplateType, $Overwrite, $AssetExts)
+    [int]$FilesProcessed = 0
 
+    if (!(Test-Path $TargetFolder)) {
+        New-Item -Path $TargetFolder -ItemType Directory -Force | Out-Null
+    }
+
+    foreach ($File in $SourceFiles) {
+        $Ext = $File.Extension.ToLower().TrimStart('.')
+
+        if ($Ext -in $AssetExts) {
+            # Copy images/videos/sidecars directly
+            $DestAsset = Join-Path $TargetFolder $File.Name
+            if (!(Test-Path $DestAsset) -or $Overwrite) {
+                Copy-Item $File.FullName -Destination $DestAsset -Force
+            }
+        }
+        elseif ($Ext -match 'md|txt|html') {
+            # Process as Markdown
+            $RawBase = $File.BaseName
+            $WebSafeID = $RawBase -replace '\s+', '-' -replace '[^a-zA-Z0-9\-]', ''
+            $MdPath = Join-Path $TargetFolder "$WebSafeID.md"
+
+            if ((Test-Path $MdPath) -and (-not $Overwrite)) { continue }
+
+            $RawContent = Get-Content $File.FullName -Raw
+            $SafeContent = Clean-SentinelContent -Content $RawContent
+            $SafeTitle = Get-SafeYamlTitle -Title $RawBase
+
+            $FinalMD = @"
+---
+title: $SafeTitle
+---
+
+$SafeContent
+"@
+            [System.IO.File]::WriteAllText($MdPath, $FinalMD, [System.Text.Encoding]::UTF8)
+            $FilesProcessed++
+        }
+    }
+    return $FilesProcessed
+}
+
+function Global:Clear-SentinelOdometer {
     $Width = Get-SentinelWidth
-    # Construct the prefix (arrows and stats)
-    $Prefix = "  $($Global:Icons.Arrow) [$Tag] [$Source] [$Current/$Total] ($Percent%) "
-
-    # Calculate available space for the path to prevent wrapping
-    $MaxPathLen = $Width - $Prefix.Length - 1
-    $DisplayPath = if ($Path.Length -gt $MaxPathLen) {
-        "..." + $Path.Substring($Path.Length - $MaxPathLen + 3)
-    } else { $Path }
-
-    # Return to start of line, print everything, then pad the remainder with spaces
-    Write-Host "`r$Prefix" -NoNewline -ForegroundColor Cyan
-    Write-Host $DisplayPath -NoNewline -ForegroundColor Gray
-
-    $FinalLen = $Prefix.Length + $DisplayPath.Length
-    $Padding = $Width - $FinalLen
-    if ($Padding -gt 0) { Write-Host (" " * $Padding) -NoNewline }
+    Write-Host ("`r" + (' ' * $Width) + "`r") -NoNewline
 }
 
-function Get-SentinelWidth {
-    $W = try { $Host.UI.RawUI.WindowSize.Width } catch { 120 }
-    if ($W -lt 40) { $Result = 120 } else { $Result = $W - 5 }
-    return $Result
+function Global:Clean-SentinelContent {
+    param([string]$Content)
+    if ([string]::IsNullOrWhiteSpace($Content)) { return "" }
+
+    # 1. Escape MDX sensitive characters
+    $Escaped = $Content -replace '<', '&lt;' `
+                        -replace '>', '&gt;' `
+                        -replace '\{', '&#123;' `
+                        -replace '\}', '&#125;'
+
+    # 2. Escape colons at the start of a line to stop directive warnings
+    $Escaped = $Escaped -replace '(?m)^:', '\:'
+
+    # 3. Clean up empty markdown links []() found in your logs
+    $Escaped = $Escaped -replace '\[\]\(\)', ''
+
+    return $Escaped.Trim()
 }
 
-function Format-SentinelNum {
+function Global:Format-SentinelNum {
     param([int]$Number)
     return $Number.ToString('#,0')
 }
 
-function Get-SentinelRoleColor {
+function Global:Get-SentinelWidth {
+    try { return $Host.UI.RawUI.WindowSize.Width - 5 } catch { return 115 }
+}
+
+function Global:Get-SafeYaml {
+    param($v)
+    if ($v) { return $v.ToString().Replace("'", "''") } else { return "" }
+}
+
+function Global:Get-SentinelBuddy {
+    param([System.IO.FileInfo]$Sidecar, [string]$SearchRoot)
+    try {
+        return Get-ChildItem $SearchRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.BaseName -eq $Sidecar.BaseName -and $_.Extension -ne '.xmp'
+        } | Select-Object -First 1
+    }
+    catch { return $null }
+}
+
+function Global:Get-SentinelRoleColor {
     param([string]$Role)
     if ($Role -match 'Hybrid') { return 'Red' }
     switch -regex ($Role) {
@@ -57,194 +114,144 @@ function Get-SentinelRoleColor {
     }
 }
 
-# --- UI DISPLAY FUNCTIONS ---
+function Global:Get-SafeYamlTitle {
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return "Untitled" }
 
-function Write-SentinelPhase0 {
-    param(
-        [Parameter(Mandatory=$true)]
-        $Locations,
-        [Parameter(Mandatory=$true)]
-        [ValidateSet('Sync', 'Web')]
-        $JobType
-    )
-    # Inside Write-SentinelPhase0 function in Sentinel-Core.ps1
-    $IsRelevant = if ($JobType -eq 'Web') {
-        $loc.Role -eq 'Hybrid_Archive'
-    } else {
-        # FIX: Use .Depth because that's where SentinelLocation class stores it
-        $loc.Depth -ge 0
-    }
-    Write-Host '     STATUS      NAME                ROLE                PATH'
-    foreach ($loc in $Locations) {
-        $IsOnline = Test-Path $loc.Path
-
-        # Determine Activity based on Job Context
-        $IsRelevant = if ($JobType -eq 'Web') {
-            $loc.Role -eq 'Hybrid_Archive'
-        } else {
-            # In Sync, we check if MonitorDepth is 0 or higher
-            $loc.MonitorDepth -ge 0
-        }
-
-        # Status Logic
-        if (-not $IsOnline) {
-            $StatusStr = '[OFFLINE ]'
-            $StatusColor = 'Red'
-        } elseif ($IsRelevant) {
-            $StatusStr = '[ACTIVE  ]'
-            $StatusColor = 'Green'
-        } else {
-            $StatusStr = '[SINK    ]'
-            $StatusColor = 'DarkGray'
-        }
-
-        $RoleColor = switch -regex ($loc.Role) {
-            'Hybrid'      {'Red'}
-            'Photo'       {'Yellow'}
-            'RAW'         {'Cyan'}
-            'Video|Audio' {'Magenta'}
-            'Pickup'      {'Gray'}
-            Default       {'White'}
-        }
-
-        Write-Host '     ' -NoNewline
-        Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
-        Write-Host " [$($loc.Name.PadRight(16))]" -NoNewline
-        $RoleDisplay = if ([string]::IsNullOrWhiteSpace($loc.Role)) { "N/A" } else { $loc.Role }
-        Write-Host " [$($RoleDisplay.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
-#        Write-Host " [$($loc.Role.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
-        Write-Host $loc.Path -ForegroundColor Gray
-    }
+    # Escape double quotes and wrap the whole title in double quotes
+    $CleanTitle = $Title -replace '"', '\"'
+    return "`"$CleanTitle`""
 }
 
-function Clear-SentinelOdometer {
-    $Width = Get-SentinelWidth
-    Write-Host ("`r" + (' ' * $Width) + "`r") -NoNewline
+function Global:Get-SentinelWebExtensions {
+    param($FileTypeData)
+
+    $FinalList = @()
+
+    foreach ($item in $FileTypeData.WebContent) {
+        if ($FileTypeData.ContainsKey($item)) {
+            # It's a category (like Images), add all its extensions
+            $FinalList += $FileTypeData.$item
+        } else {
+            # It's a direct extension (like .mp4), add it directly
+            $FinalList += $item
+        }
+    }
+
+    # Return unique, lowercase extensions without the dot
+    return $FinalList | ForEach-Object { $_.ToLower().TrimStart('.') } | Select-Object -Unique
 }
 
-# --- SECURITY & CREDENTIALS ---
+function Global:Initialize-SentinelWebRoot {
+    param($RootPath)
 
-function Initialize-SentinelSecrets {
+    $AllowPurge = $script:YamlData.Settings.PurgeWebsite
+    $Tmpl = $script:YamlData.Settings.TemplateDir
+    $Parent = Split-Path $RootPath -Parent
+    $Leaf = Split-Path $RootPath -Leaf
+
+    # 1. FORCE WIPE
+    if (Test-Path $RootPath) {
+        if ($AllowPurge) {
+            Write-Host "  $($Global:Icons.Warning) PurgeWebsite is TRUE. Performing Force-Wipe..." -ForegroundColor Yellow
+
+            # Kill Node to unlock files
+            Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 2
+
+            # Completely remove the directory so npx has a 100% clean start
+            Remove-Item $RootPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 2. RE-SCAFFOLD IF MISSING
+    if (!(Test-Path (Join-Path $RootPath 'package.json'))) {
+        Write-Host "  $($Global:Icons.Arrow) Engine missing. Scaffolding Docusaurus..." -ForegroundColor Cyan
+
+        if (!(Test-Path $Parent)) { New-Item $Parent -ItemType Directory -Force | Out-Null }
+
+        Push-Location $Parent
+        # Use cmd /c with --yes to force the latest docusaurus scaffold
+        cmd /c "npx --yes create-docusaurus@latest $Leaf classic --javascript --skip-install"
+        Pop-Location
+
+        # 3. INJECT CONFIG IMMEDIATELY
+        if (Test-Path $Tmpl) {
+            Write-Host "  $($Global:Icons.Check) Injecting Custom Templates..." -ForegroundColor Gray
+            Copy-Item (Join-Path $Tmpl 'docusaurus.config.js') $RootPath -Force
+            Copy-Item (Join-Path $Tmpl 'sidebars.js') $RootPath -Force
+        }
+
+        # 4. CLEANUP BLOAT
+        $PurgeList = @('blog', 'docs', 'src/components/HomepageFeatures')
+        foreach ($f in $PurgeList) {
+            $p = Join-Path $RootPath $f
+            if (Test-Path $p) { Remove-Item $p -Recurse -Force }
+        }
+    }
+
+    return $true
+}
+
+function Global:Initialize-SentinelSecrets {
     $Conf = $script:YamlData.'Settings'.'EmailSettings'
-    $BaseDir = $PSScriptRoot
-    $SecretFile = Join-Path $BaseDir ($Conf.'CredPath')
-
+    $SecretFile = Join-Path $PSScriptRoot ($Conf.'CredPath')
     if (-not (Test-Path $SecretFile)) {
         Write-Host "`n[SECURITY] No credentials found." -ForegroundColor Yellow
-        $User = $Conf.'To'
-
-        # User pastes password (e.g., 'pmkg igcu kstr kafj')
-        $RawPass = Read-Host "Paste your 16-character GMail App Password for $User"
-
-        # CLEANUP: Strip all spaces/tabs
+        $RawPass = Read-Host "Paste your 16-character GMail App Password for $($Conf.'To')"
         $CleanPass = $RawPass.Trim().Replace(" ", "").Replace("`t", "")
-
-        if ($CleanPass.Length -ne 16) {
-            Write-Host "`n[CRITICAL] Error: You provided $($CleanPass.Length) characters." -ForegroundColor Red
-            Write-Host "Gmail App Passwords MUST be exactly 16 characters long." -ForegroundColor Red
-            Write-Host "Please check your copy/paste and try again.`n" -ForegroundColor Yellow
-            return # Exit function to prevent saving a broken password
-        }
-
+        if ($CleanPass.Length -ne 16) { Write-Host "[CRITICAL] Gmail App Passwords must be 16 chars." -ForegroundColor Red; return }
         $SecPass = ConvertTo-SecureString $CleanPass -AsPlainText -Force
-        $Object = New-Object System.Management.Automation.PSCredential($User, $SecPass)
-        $Object | Export-CliXml -Path $SecretFile
-        Write-Host "[SUCCESS] 16-character password verified and encrypted." -ForegroundColor Green
+        New-Object System.Management.Automation.PSCredential($Conf.'To', $SecPass) | Export-CliXml -Path $SecretFile
+        Write-Host "[SUCCESS] Password encrypted." -ForegroundColor Green
     }
-
     if (Test-Path $SecretFile) {
-        try {
-            $TempCred = Import-CliXml -Path $SecretFile
-            $script:GmailUser = $TempCred.UserName
-            $script:AppPassword = $TempCred.GetNetworkCredential().Password
-        } catch {
-            Remove-Item $SecretFile -Force -ErrorAction SilentlyContinue
-        }
+        $TempCred = Import-CliXml -Path $SecretFile
+        $script:GmailUser = $TempCred.UserName
+        $script:AppPassword = $TempCred.GetNetworkCredential().Password
     }
 }
 
+function Global:Start-SentinelWebsite {
+    param($Path, $Locations)
 
-function Send-SentinelReport {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$ReportBody,
-        [string]$JobName = 'Sync',
-        [string]$SiteUrl = ''  # New optional parameter
-    )
+    Push-Location $Path
 
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    if (!(Test-Path (Join-Path $Path "node_modules"))) {
+        Write-Host "  $($Global:Icons.Arrow) Installing Node dependencies (First Run/After Wipe)..." -ForegroundColor Cyan
+        # Using cmd /c here ensures npm is found and executed correctly
+        cmd /c "npm install --quiet"
+    }
+
+    Write-Host "  $($Global:Icons.Check) Starting Docusaurus Engine..." -ForegroundColor Green
+
+    # FIX: Use cmd /c to launch the npm batch script
+    Start-Process "cmd" -ArgumentList "/c npm start" -NoNewWindow
+
+    Pop-Location
+    return "ONLINE"
+}
+
+function Global:Send-SentinelReport {
+    param([string]$ReportBody, [string]$JobName = 'Sync', [string]$SiteUrl = '', [string]$WebSubFolder = '')
     Initialize-SentinelSecrets
     $Conf = $script:YamlData.'Settings'.'EmailSettings'
     if (-not $Conf.'Enabled' -or [string]::IsNullOrWhiteSpace($script:GmailUser)) { return }
-
+    $FullLink = if (![string]::IsNullOrEmpty($WebSubFolder)) { "$($SiteUrl.TrimEnd('/'))/$($WebSubFolder.TrimStart('/'))" } else { $SiteUrl }
     try {
-        $Msg = New-Object System.Net.Mail.MailMessage
-        $Msg.From = New-Object System.Net.Mail.MailAddress($script:GmailUser)
-        $Msg.To.Add($Conf.'To')
-        $Msg.Subject = "Sentinel $JobName Report: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
-
-        # --- HTML Body Construction ---
+        $Msg = New-Object System.Net.Mail.MailMessage; $Msg.From = New-Object System.Net.Mail.MailAddress($script:GmailUser)
+        $Msg.To.Add($Conf.'To'); $Msg.Subject = "Sentinel $JobName Report: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
         $Msg.IsBodyHtml = $true
-        $HtmlBody = @"
-<html>
-<body style="font-family: sans-serif; line-height: 1.6; color: #333;">
-    <h2 style="color: #2e8555;">Sentinel $JobName Report</h2>
-    <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #ddd;">$ReportBody</pre>
-"@
-        # Append Link if SiteUrl is provided
-        if (![string]::IsNullOrEmpty($SiteUrl)) {
-            $HtmlBody += @"
-    <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-left: 5px solid #2e8555;">
-        <strong>🌍 Live Site Updated:</strong><br />
-        <a href="$SiteUrl" style="color: #2e8555; font-weight: bold; text-decoration: none;">$SiteUrl</a>
-    </div>
-"@
-        }
-
-        $HtmlBody += "</body></html>"
-        $Msg.Body = $HtmlBody
-
-        $Smtp = New-Object System.Net.Mail.SmtpClient('smtp.gmail.com', 587)
-        $Smtp.EnableSsl = $true
-        $Smtp.Timeout = 20000
-        $Smtp.UseDefaultCredentials = $false
+        $Msg.Body = "<html><body style='font-family:sans-serif;color:#333;'><h2 style='color:#2e8555;'>Sentinel $JobName Report</h2><pre style='background:#f4f4f4;padding:15px;border:1px solid #ddd;'>$ReportBody</pre>"
+        if ($FullLink) { $Msg.Body += "<div style='margin-top:20px;padding:15px;background:#e8f5e9;border-left:5px solid #2e8555;'><strong>Live Site:</strong><br/><a href='$FullLink'>$FullLink</a></div>" }
+        $Msg.Body += "</body></html>"
+        $Smtp = New-Object System.Net.Mail.SmtpClient('smtp.gmail.com', 587); $Smtp.EnableSsl = $true
         $Smtp.Credentials = New-Object System.Net.NetworkCredential($script:GmailUser, $script:AppPassword)
-
-        $Smtp.Send($Msg)
-        Write-Host "`n[EMAIL] Success! Report sent to $($Conf.'To')" -ForegroundColor Green
-
-        $Msg.Dispose(); $Smtp.Dispose()
-    }
-    catch {
-        Write-Host "`n[EMAIL] AUTH FAILURE: Gmail rejected the credentials." -ForegroundColor Red
-        Write-Host "Details: $($_.Exception.Message)" -ForegroundColor Gray
-
-        $Reset = Read-Host 'Reset credentials and try again? (Y/N)'
-        if ($Reset -eq 'Y') {
-            Remove-Item (Join-Path $PSScriptRoot $Conf.'CredPath') -Force -ErrorAction SilentlyContinue
-        }
-    }
+        $Smtp.Send($Msg); Write-Host "[EMAIL] Report sent to $($Conf.'To')" -ForegroundColor Green
+    } catch { Write-Host "[EMAIL] Failed: $($_.Exception.Message)" -ForegroundColor Red }
 }
 
-
-
-# --- FILE LOGIC HELPERS ---
-
-function Get-SentinelBuddy {
-    param([System.IO.FileInfo]$Sidecar, [string]$SearchRoot)
-    try {
-        return Get-ChildItem $SearchRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
-            $_.BaseName -eq $Sidecar.BaseName -and $_.Extension -ne '.xmp'
-        } | Select-Object -First 1
-    }
-    catch { return $null }
-}
-
-# --- WEB GENERATION & TEMPLATE ENGINE ---
-
-
-function Test-SentinelExclusion {
+function Global:Test-SentinelExclusion {
     param([string]$Path)
     $Exclusions = $script:YamlData.'Exclusions'
     foreach ($ex in $Exclusions) {
@@ -253,211 +260,76 @@ function Test-SentinelExclusion {
     return $false
 }
 
-function Build-WebPageFromTemplate {
-    param(
-        [System.IO.FileInfo[]]$SourceFiles,
-        [string]$TargetFolder,
-        [string]$TemplateType,
-        [bool]$Overwrite,
-        [string]$GroupSeparator = '-.-'
-    )
-
-    if (-not $SourceFiles) { return 'ERROR' }
-
-    # 1. Prepare Target Directory
-    if (-not (Test-Path $TargetFolder)) {
-        New-Item -Path $TargetFolder -ItemType Directory -Force | Out-Null
-    }
-
-    # 2. Extract Primary Info
-    $RawBase = $SourceFiles[0].BaseName
-    $EscapedSep = [regex]::Escape($GroupSeparator)
-    $CleanName = if ($RawBase -match $EscapedSep) {
-        $RawBase.Substring(0, $RawBase.LastIndexOf($GroupSeparator))
-    } else { $RawBase }
-
-    $MdPath = Join-Path $TargetFolder "$CleanName.md"
-
-    # 3. Copy Assets
-    foreach ($file in $SourceFiles) {
-        $DestFile = Join-Path $TargetFolder $file.Name
-        if (-not (Test-Path $DestFile) -or $Overwrite) {
-            Copy-Item -Path $file.FullName -Destination $DestFile -Force
-        }
-    }
-
-    # 4. Check Overwrite
-    $ForceUpdate = ($Overwrite -eq $true) -or ($Overwrite -eq 'true')
-    $ShouldWrite = (-not (Test-Path $MdPath)) -or $ForceUpdate
-
-    if (-not $ShouldWrite) { return 'SKIP' }
-
-    # 5. Data Gathering
-    $DisplayTitle = (Get-Culture).TextInfo.ToTitleCase(($CleanName -replace '-', ' ').ToLower())
-    $MediaGallery = ""
-    $Instructions = ""
-    $Metadata = ""
-
-    foreach ($f in $SourceFiles) {
-        $Ext = $f.Extension.ToLower()
-
-        if ($Ext -match 'jpg|jpeg|png|webp|gif|heic|tif|tiff') {
-            $MediaGallery += "![image]($($f.Name))`n`n"
-        }
-        elseif ($Ext -match 'mp4|mov|avi|mkv') {
-            $MediaGallery += "### Video Native Playback`n<video controls style={{width: '100%'}} src='./$($f.Name)' />`n`n"
-        }
-        elseif ($Ext -eq '.md') {
-            $Instructions += (Get-Content $f.FullName -Raw) -replace '(?s)^---.*?---', ''
-        }
-        elseif ($Ext -eq '.txt') {
-            $Instructions += "`n" + (Get-Content $f.FullName -Raw) + "`n"
-        }
-        elseif ($Ext -match 'json|xml|yml|yaml') {
-            $Lang = $Ext.TrimStart('.')
-            $RawMeta = Get-Content $f.FullName -Raw
-            $Metadata += "### Metadata ($Lang)`n" + '```' + "$Lang`n$RawMeta`n" + '```' + "`n"
-        }
-    }
-
-    # 6. REPLACEMENT ENGINE (Updated for Docusaurus v3 YAML safety)
-    $BodyContent = if ($null -ne $Instructions -and $Instructions -ne "") { $Instructions } else { 'No instructions found.' }
-    $FirstImgFile = $SourceFiles | Where-Object { $_.Extension -match 'jpg|jpeg|png|webp' } | Select-Object -First 1
-
-    # --- PRESERVATION LOGIC ---
-    # If the source file is an index, we use the raw content instead of rebuilding YAML
-    if ($CleanName -eq 'index') {
-        $IndexFile = $SourceFiles | Where-Object { $_.Name -eq 'index.md' } | Select-Object -First 1
-        if ($null -ne $IndexFile) {
-            $RawContent = Get-Content $IndexFile.FullName -Raw
-            $RawContent | Set-Content -Path $MdPath -Encoding UTF8 -Force
-            return 'CREATED'
-        }
-    }
-
-    $YamlLines = @('---')
-
-    # Primary fix: Use single quotes for both keys and values as requested
-    $YamlLines += "'title': '$($DisplayTitle.Replace("'", "''"))'"
-
-    # URL fix: Remove non-ASCII characters and use single quotes for slug
-    $SafeSlug = $CleanName.ToLower() -replace '[^a-z0-9-]', '-' -replace '-+', '-'
-    $YamlLines += "'slug': '$SafeSlug'"
-
-    if ($null -ne $FirstImgFile) {
-        $YamlLines += "'image': './$($FirstImgFile.Name)'"
-        $YamlLines += "'primary_image': './$($FirstImgFile.Name)'"
-    }
-
-    $YamlLines += '---'
-
-    # Combine YAML with the body structure
-    $Tmpl = ($YamlLines -join "`r`n") + @"
-
-# {{title}}
-
-{{media}}
-
-{{styled_body}}
-
----
-{{metadata_section}}
-"@
-
-    # Apply final replacements
-    $FinalMD = $Tmpl.Replace('{{title}}', $DisplayTitle)
-    $FinalMD = $FinalMD.Replace('{{media}}', $MediaGallery)
-    $FinalMD = $FinalMD.Replace('{{styled_body}}', $BodyContent)
-    $FinalMD = $FinalMD.Replace('{{metadata_section}}', $Metadata)
-
-    # 7. Write to File
-    $FinalMD | Set-Content -Path $MdPath -Encoding UTF8 -Force
-
-    return 'CREATED'
-}
-
-function Write-SentinelCategoryYaml {
-    param($FolderPath, $FolderName, $Force)
-    if (-not (Test-Path $FolderPath)) {
-        New-Item -ItemType Directory -Path $FolderPath -Force | Out-Null
-    }
+function Global:Write-SentinelCategoryYaml {
+    param($FolderPath, $FolderName)
+    if (-not (Test-Path $FolderPath)) { New-Item -Path $FolderPath -ItemType Directory -Force | Out-Null }
     $Path = Join-Path $FolderPath "_category_.yml"
-
-    $Content = @(
-        "'label': '$FolderName'",
-        "'link':",
-        "  'type': 'generated-index'"
-    ) -join "`r`n"
-
+    $Content = "'label': '$FolderName'`r`n'link':`r`n  'type': 'generated-index'`r`n  'description': 'View $FolderName collection.'"
     $Content | Set-Content $Path -Encoding UTF8 -Force
 }
 
-function Write-SentinelRecipeIndex {
+function Global:Write-SentinelRecipeIndex {
     param([string]$TargetRoot, [int]$GroupCount)
-
-    if (-not (Test-Path $TargetRoot)) {
-        New-Item -ItemType Directory -Path $TargetRoot -Force | Out-Null
-    }
-
     $Path = Join-Path $TargetRoot 'index.md'
-    $PrettyDate = Get-Date -Format 'MMMM dd, yyyy'
     $DirName = Split-Path $TargetRoot -Leaf
-    $LowerDir = $DirName.ToLower()
-
-    $Content = @(
-        '---',
-        "'id': '$LowerDir-index'",
-        "'title': '$DirName'",
-        "'sidebar_label': '$DirName'",
-        "'sidebar_position': 1",
-        "'slug': '/'",
-        '---',
-        '',
-        "# $DirName Vault",
-        "Categories: $GroupCount",
-        "Last Updated: $PrettyDate"
-    ) -join "`r`n"
-
+    $Content = "---`n'title': '$DirName'`n'sidebar_label': 'Overview'`n'slug': '/'`n---`n`nimport DocCardList from '@theme/DocCardList';`n`n# $DirName Gallery`n`nTotal Collections: $GroupCount`n`n<DocCardList />"
     $Content | Set-Content -Path $Path -Encoding UTF8 -Force
 }
 
-function AutoStartWebSite {
-    param (
-        [Parameter(Mandatory)]
-        [string]$Path
+function Global:Write-SentinelOdometer {
+    param($Tag, $Source, $Path, $Current = 0, $Total = 0)
+
+    # 1. Fix Math: Ensure percentage never exceeds 100% and handles zero totals
+    $SafeTotal = if ($Total -lt $Current) { $Current } else { $Total }
+    $Percent = if ($SafeTotal -gt 0) { [Math]::Min(100, [Math]::Round(($Current / $SafeTotal) * 100)) } else { 0 }
+
+    $Width = Get-SentinelWidth
+    $Prefix = "  $($Global:Icons.Arrow) [$Tag] [$Source] [$Current/$SafeTotal] ($Percent%) "
+
+    # 2. Calculate remaining space for the path
+    $RemainingSpace = $Width - $Prefix.Length - 1
+    if ($RemainingSpace -lt 0) { $RemainingSpace = 0 }
+
+    # 3. Path Shortening
+    $DisplayPath = $Path
+    if ($Path.Length -gt $RemainingSpace) {
+        if ($RemainingSpace -gt 5) {
+            $DisplayPath = "..." + $Path.Substring($Path.Length - ($RemainingSpace - 3))
+        } else {
+            $DisplayPath = ""
+        }
+    }
+
+    # 4. THE FIX: Create a "Clear Line" string to prevent ghosting
+    # This fills the rest of the console width with spaces
+    $LineContent = "$Prefix$DisplayPath"
+    $Padding = ""
+    if ($LineContent.Length -lt $Width) {
+        $Padding = " " * ($Width - $LineContent.Length - 1)
+    }
+
+    # 5. Render with Carriage Return and No New Line
+    Write-Host "`r$LineContent$Padding" -NoNewline -ForegroundColor Cyan
+}
+
+function Global:Write-SentinelPhase0 {
+    param(
+        [Parameter(Mandatory=$true)] $Locations,
+        [Parameter(Mandatory=$true)] [ValidateSet('Sync', 'Web')] $JobType
     )
-
-    # 1. Administrator Privilege Check
-    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-    if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Host "--- CRITICAL: Admin privileges required ---" -ForegroundColor Red
-        return
-    }
-
-    $FullSitePath = $Path.TrimEnd('\')
-    $ParentPath = Split-Path $FullSitePath -Parent
-    $FolderName = Split-Path $FullSitePath -Leaf
-
-    # 2. Purge / Re-install Logic
-    if (-not (Test-Path (Join-Path $FullSitePath 'package.json'))) {
-        if (Test-Path $FullSitePath) {
-            Remove-Item -Path $FullSitePath -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        if (-not (Test-Path $ParentPath)) {
-            New-Item -ItemType Directory -Path $ParentPath -Force | Out-Null
-        }
-        Push-Location $ParentPath
-        npx --yes create-docusaurus@latest $FolderName classic --skip-install
-        Pop-Location
-    }
-
-    # 3. Start Site
-    if (Test-Path $FullSitePath) {
-        Push-Location $FullSitePath
-        if (-not (Test-Path 'node_modules')) { npm install }
-        Pop-Location
-
-        $Command = "Set-Location '$FullSitePath'; npx docusaurus start --host 0.0.0.0 --port 3000"
-        Start-Process powershell.exe -ArgumentList @('-NoExit', '-Command', $Command)
+    Write-Host '     STATUS      NAME                ROLE                PATH'
+    foreach ($loc in $Locations) {
+        $IsOnline = Test-Path $loc.Path
+        $IsRelevant = if ($JobType -eq 'Web') { $loc.Role -eq 'Hybrid_Archive' } else { $loc.MonitorDepth -ge 0 }
+        if (-not $IsOnline) { $StatusStr = '[OFFLINE ]'; $StatusColor = 'Red' }
+        elseif ($IsRelevant) { $StatusStr = '[ACTIVE  ]'; $StatusColor = 'Green' }
+        else { $StatusStr = '[SINK    ]'; $StatusColor = 'DarkGray' }
+        $RoleColor = Get-SentinelRoleColor -Role $loc.Role
+        Write-Host '     ' -NoNewline
+        Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
+        Write-Host " [$($loc.Name.PadRight(16))]" -NoNewline
+        $RoleDisplay = if ([string]::IsNullOrWhiteSpace($loc.Role)) { "N/A" } else { $loc.Role }
+        Write-Host " [$($RoleDisplay.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
+        Write-Host $loc.Path -ForegroundColor Gray
     }
 }
