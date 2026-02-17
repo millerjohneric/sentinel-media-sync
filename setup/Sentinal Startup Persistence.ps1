@@ -10,5 +10,5 @@ subst S: "C:\Source"
 powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Set-Location 'C:\Source\GEEK\Sentinel'; .\Sentinel Web Gen.ps1"
 "@
 
-$LauncherContent | Set-Content -Path $LauncherPath
+$LauncherContent | Set-Content -Path $LauncherPath -Encoding utf8
 Write-Host "SUCCESS: Startup services linked to your Windows Login." -ForegroundColor Green

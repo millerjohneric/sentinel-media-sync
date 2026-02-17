@@ -49,7 +49,7 @@ This is our central heart. Folders are named for their purpose:
 
 Type \\GEEK\Source in any window to find us.
 "@
-$ReadmeContent | Set-Content -Path $ReadmePath
+$ReadmeContent | Set-Content -Path $ReadmePath -Encoding utf8
 # 1. Create the Physical Folder
 $DataRoot = "C:\Source"
 if (!(Test-Path $DataRoot)) {

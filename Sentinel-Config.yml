@@ -5,11 +5,6 @@
     'Machine': 'GEEK'
     'Volume': 'S:'
   'DriveIcon': 'the-source.ico'
-  'Exclusions_Active':
-    - '.webaxs'
-    - 'trashbox'
-    - '.git'
-    - '$RECYCLE.BIN'
 
 'Root_Layout':
   'GitHub_Repo': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync'
@@ -21,7 +16,10 @@
   'LogPath': '_log'
   'TemplateDir': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync\templates'
   'MonitorDepth': 3
-  'PurgeWebsite': false
+  'PurgeWebsite': true
+#  if prunewebsite, purgewebsite is forced to false
+  'PruneWebsite': false
+  'DisableJunkPurge': true
   'DryRun': false
   'GlobalOverwrite': true
   'EmailSettings':
@@ -31,38 +29,92 @@
   'DefaultYear': 2026
   'DateFormat': '%Y/%m Month'
   'ChronoRegex': '^\d{4}/\d{2}\s\w+$'
-  'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\\])*[a-zA-Z0-9_\-\s]+$'
-  'PurgeTransient': true
-  'DisableSidecarReunite': true
-  'DisableJunkPurge': true
-  'Exclusions':
-    - '.webaxs'
-    - '_putaway'
-    - '$RECYCLE.BIN'
-    - 'System Volume Information'
-
-'FileTypes':
-  'Images': ['.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff', '.heic']
-  'RAWs': ['.nef', '.cr2', '.arw', '.dng']
-  'Videos': ['.mp4', '.mov', '.avi', '.mkv']
-  'Audio': ['.mp3', '.wav', '.flac', '.m4a']
-  'Docs': ['.pdf', '.docx', '.txt']
-  'Web': ['.md', '.html']
-  'Sidecars': ['.xmp', '.json', '.xml']
-  'Junk':
-    - 'Thumbs.db'
-    - 'desktop.ini'
-    - '.DS_Store'
-    - 'ehthumbs.db'
-  'WebContent':
-    - 'Images'
-    - 'Docs'
-    - 'Sidecars'
-    - 'Web'
-    - '.mp4'
-    - '.yml'
+  'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$'
+  'FileTypes':
+    'Exclusions':
+      - '.webaxs'
+      - 'trashbox'
+      - '.git'
+      - '$RECYCLE.BIN'
+      - '_putaway'
+      - 'System Volume Information'
+    'Images': [ '.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff' ]
+    'RAWs': [ '.nef', '.cr2', '.arw', '.dng' ]
+    'Videos': [ '.mp4', '.mov', '.avi', '.mkv' ]
+    'Audio': [ '.mp3', '.wav', '.flac', '.m4a' ]
+    'Docs': [ '.pdf', '.docx', '.txt' ]
+    'Web': [ '.md', '.html' ]
+    'Sidecars': [ '.xmp', '.json', '.xml', '.yml' ]
+    'Junk':
+      - 'Thumbs.db'
+      - 'desktop.ini'
+      - '.DS_Store'
+      - 'ehthumbs.db'
+    'WebContent':
+      - 'Images'
+      - 'Docs'
+      - 'Sidecars'
+      - 'Web'
+      - '.mp4'
+      - '.yml'
 
 'Locations':
+  - 'Name': 'Source Studio Engine'
+    'Path': 'C:\Source\GEEK\Sentinel\website\docs'
+    'SitePath': 'C:\Source_Studio\website'
+    'Role': 'Website'
+    'WebSubFolder': 'docs'
+    'RootType': 'web-root'
+    'AutoStart': true
+
+  - 'Name': 'Culinary Cuisine'
+    'Path': 'C:\Source\GEEK\culinary-cuisine\website'
+    'SitePath': 'C:\Source_Studio\website'
+    'Role': 'Website'
+    'WebSubFolder': 'culinary-cuisine'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'recipe-card'
+    'RootType': 'web-culinary'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': true
+    'PurgeOrphan': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
+
+  - 'Name': 'jems-tones'
+    'Path': 'C:\Source\GEEK\Photography_Hobby\website'
+    'SitePath': 'C:\Source_Studio\website'
+    'Role': 'Website'
+    'WebSubFolder': 'jems-tones'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'masonry-grid'
+    'RootType': 'web-gallery'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': true
+    'PurgeOrphan': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
+
+  - 'Name': 'millermade-handcrafted'
+    'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
+    'SitePath': 'C:\Source_Studio\website'
+    'Role': 'Website'
+    'WebSubFolder': 'millermade-handcrafted'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'Template': 'hand-crafted'
+    'RootType': 'web-shop'
+    'MonitorDepth': 99
+    'SortDepth': null
+    'Overwrite': true
+    'PurgeOrphan': true
+    'GroupSeparator': '-.-'
+    'Structure':
+      - 'Event'
+
 # --- ARCHIVES (Destinations) ---
   - 'Name': 'timeline'
     'Path': 'C:\Source\GEEK\Photo_Archive\timeline'
@@ -206,71 +258,3 @@
     'Scope': 'Global'
     'Structure':
       - 'Chrono'
-
-  - 'Name': 'Source Studio Engine'
-    'Path': 'C:\Source\GEEK\Sentinel\website\docs'
-    'Role': 'Website'
-    'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'docs'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'recipe-base'
-    'RootType': 'web-docs'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'AutoStart': true
-    'GroupSeparator': '-.-'
-    'Structure':
-     - 'Event'
-
-  - 'Name': 'Culinary Cuisine'
-    'Path': 'C:\Source\GEEK\culinary-cuisine\website'
-    'Role': 'Website'
-    'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'culinary-cuisine'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'recipe-card'
-    'RootType': 'web-culinary'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'AutoStart': true
-    'GroupSeparator': '-.-'
-    'Structure':
-      - 'Event'
-
-  - 'Name': 'jems-tones'
-    'Path': 'C:\Source\GEEK\Photography_Hobby\website'
-    'Role': 'Website'
-    'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'jems-tones'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'masonry-grid'
-    'RootType': 'web-gallery'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'AutoStart': true
-    'GroupSeparator': '-.-'
-    'Structure':
-      - 'Event'
-
-  - 'Name': 'millermade-handcrafted'
-    'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
-    'Role': 'Website'
-    'SitePath': 'C:\Source_Studio\website'
-    'WebSubFolder': 'millermade-handcrafted'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'hand-crafted'
-    'RootType': 'web-shop'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'AutoStart': true
-    'GroupSeparator': '-.-'
-    'Structure':
-      - 'Event'

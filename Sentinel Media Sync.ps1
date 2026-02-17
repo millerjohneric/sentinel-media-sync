@@ -1,5 +1,5 @@
 # ==============================================================================
-# Sentinel Media Sync v17.2 [STABLE]
+# Sentinel Media Sync v17.3 [WEBSITE ROLE EXCLUSION]
 # ==============================================================================
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -9,7 +9,8 @@ $CoreFile = Join-Path $PSScriptRoot 'Sentinel-Core.ps1'
 if (Test-Path $CoreFile) { . $CoreFile } else { Write-Error 'Core Missing'; exit }
 
 Import-Module powershell-yaml
-$ConfigFilePath = Join-Path $PSScriptRoot 'config2.0.yml'
+# Updated config file name
+$ConfigFilePath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
 $YamlData = Get-Content $ConfigFilePath -Raw | ConvertFrom-Yaml
 $WebLocations = $YamlData.Locations
 $GlobalSettings = $YamlData.Settings
@@ -18,7 +19,7 @@ $globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $stats = @{ Scanned = 0; Moved = 0; AtHome = 0; Purged = 0; Errors = 0 }
 
 # --- PHASE 0: READINESS ---
-Write-SentinelPhase0 -Locations $WebLocations -JobType 'Sync'
+Write-SentinelPhase0 -Locations $WebLocations -JobType 'Web'
 
 # --- PHASE 1: DIRECTORY VALIDATION ---
 Write-Host "`nPHASE 1: Validating Directory Integrity..." -ForegroundColor White
@@ -31,8 +32,11 @@ foreach ($loc in $WebLocations) {
 
 # --- PHASE 2: MEDIA RE-ORGANIZATION ---
 Write-Host "`nPHASE 2: Organizing Media Assets..." -ForegroundColor White
-$PickupLocs = $WebLocations | Where-Object { $_.Role -eq 'Pickup' }
-foreach ($loc in $PickupLocs) {
+
+# Explicitly ignore 'Website' roles to prevent accidental file moves into dev environments
+$PickupLocs = $WebLocations | Where-Object { $_.Role -eq 'Pickup' -and $_.Role -ne 'Website' }
+
+ foreach ($loc in $PickupLocs) {
     $Files = Get-ChildItem -Path $loc.Path -File -Recurse | Where-Object {
         -not (Test-SentinelExclusion -Path $_.FullName)
     }
@@ -41,7 +45,8 @@ foreach ($loc in $PickupLocs) {
         $count++
         $stats.Scanned++
         Write-SentinelOdometer -Tag 'MOVE' -Source $loc.Name -Path $file.Name -Current $count -Total $Files.Count
-        # Standard routing logic executed here
+
+        # Routing logic remains internal
         $stats.AtHome++
     }
     Write-Host ""
@@ -87,7 +92,7 @@ if ($GlobalSettings.DisableJunkPurge) {
 
 # --- PHASE 5: MISSION REPORT ---
 $Duration = $globalStopwatch.Elapsed.ToString('mm\:ss')
-$Summary = "Scanned: $($stats.Scanned) | Moved: $($stats.AtHome) | Purged: $($stats.Purged) | Time: $Duration"
-Send-SentinelReport -ReportBody $Summary -JobName 'MediaSync'
+Send-SentinelNotification -Stats $stats -Duration $Duration -JobName 'MediaSync'
 
+$Summary = "Scanned: $($stats.Scanned) | Moved: $($stats.AtHome) | Purged: $($stats.Purged) | Time: $Duration"
 Write-Host "`n[SUCCESS] Mission complete in $Duration." -ForegroundColor Green

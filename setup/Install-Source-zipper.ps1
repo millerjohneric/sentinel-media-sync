@@ -23,7 +23,7 @@ if (`$ComputerName -eq 'GEEK') {
     Write-Host "Network S: Drive mapped for `$ComputerName." -ForegroundColor Green
 }
 "@
-$MapScript | Set-Content -Path (Join-Path $SetupDir 'Map-Source.ps1') -Encoding UTF8
+$MapScript | Set-Content -Path (Join-Path $SetupDir 'Map-Source.ps1')  -Encoding utf8
 
 # --- Create the Double-Click Launcher (.bat) ---
 $Launcher = @"
@@ -36,4 +36,4 @@ echo.
 echo If you see Green text above, the S: Drive is ready!
 pause
 "@
-$Launcher | Set-Content -Path (Join-Path $SetupDir 'CLICK_TO_CONNECT.bat')
+$Launcher | Set-Content -Path (Join-Path $SetupDir 'CLICK_TO_CONNECT.bat') -Encoding utf8

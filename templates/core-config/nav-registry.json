@@ -1,0 +1,22 @@
+﻿[
+    {
+        "title":  "Source Studio Engine",
+        "description":  "Unified web-docs Archive",
+        "link":  "/docs"
+    },
+    {
+        "title":  "Culinary Cuisine",
+        "description":  "Unified web-culinary Archive",
+        "link":  "/culinary-cuisine"
+    },
+    {
+        "title":  "jems-tones",
+        "description":  "Unified web-gallery Archive",
+        "link":  "/jems-tones"
+    },
+    {
+        "title":  "millermade-handcrafted",
+        "description":  "Unified web-shop Archive",
+        "link":  "/millermade-handcrafted"
+    }
+]

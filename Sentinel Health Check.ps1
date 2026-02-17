@@ -5,7 +5,7 @@ $CorePath = Join-Path $PSScriptRoot 'Sentinel-Core.ps1'
 if (Test-Path $CorePath) { . $CorePath }
 
 Import-Module powershell-yaml
-$Config = Get-Content (Join-Path $PSScriptRoot 'config2.0.yml') -Raw | ConvertFrom-Yaml
+$Config = Get-Content (Join-Path $PSScriptRoot 'Sentinel-Config.yml') -Raw | ConvertFrom-Yaml
 $Locations = $Config.Locations
 
 Write-Host "`n[HEALTH CHECK] Validating Infrastructure..." -ForegroundColor White
