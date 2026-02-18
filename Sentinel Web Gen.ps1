@@ -79,38 +79,91 @@ if (!(Test-Path $TargetWebsitePath)) {
 }
 Purge-SentinelBoilerplate -SitePath $CleanPath
 
-# --- PHASE 2: GENERATING ARCHITECTURE ---
-Write-Host "`nPHASE 2: Injecting Dynamic Plugins..." -ForegroundColor Cyan
+# --- PHASE 2: BRANDING & SYNC ---
+# 1. First, inject branding (This places the "Gold Master" files)
+Initialize-SentinelTemplates -TemplateDir $YamlData.Settings.TemplateDir
+Invoke-SentinelBranding -SitePath $TargetWebsitePath -TemplateDir $YamlData.Settings.TemplateDir
+
+# 2. Sync your raw content (Culinary, etc.) into the sandbox
+Sync-SentinelWebContent -Locations $YamlData.Locations -FileTypes $YamlData.Settings.FileTypes
+
+# --- PHASE 3: DYNAMIC ARCHITECTURE (OVERWRITE MASTER) ---
+Write-Host "`nPHASE 3: Patching Dynamic Configs & Categories..." -ForegroundColor Cyan
+
+# 3. NOW write the dynamic config (This overwrites the master with the correct plugin paths)
 Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $YamlData.Locations
 Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $YamlData.Locations
 
-# --- PHASE 2: TEMPLATE GENERATION & INJECTION ---
-# 1. Update your GitHub templates folder (Dev Mode)
-Initialize-SentinelTemplates -TemplateDir $YamlData.Settings.TemplateDir
+# 4. Generate the Category labels for your deep folders (Bread, Desserts, etc.)
+foreach ($loc in $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }) {
+    $SubPath = Join-Path $TargetWebsitePath $loc.WebSubFolder.Replace("'", "")
+    if (Test-Path $SubPath) {
+        Get-ChildItem $SubPath -Recurse -Directory | ForEach-Object {
+            Write-SentinelCategoryYaml -FolderPath $_.FullName -FolderName $_.Name
+        }
+    }
+}
+# --- PHASE 3: DYNAMIC ARCHITECTURE (OVERWRITE MASTER) ---
+Write-Host "`nPHASE 3: Patching Dynamic Configs & Categories..." -ForegroundColor Cyan
 
-# 2. Inject those templates into the Sandbox (Build Mode)
-Invoke-SentinelBranding -SitePath $TargetWebsitePath -TemplateDir $YamlData.Settings.TemplateDir
+# 1. Update Configs to register folder plugins (culinary-cuisine, etc.)
+Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $YamlData.Locations
+Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $YamlData.Locations
 
-# --- PHASE 2: CONTENT SYNC (The Safe Copy) ---
-Write-Host "PHASE 2: Selective Content Sync..." -ForegroundColor Cyan
-$FileTypes = $YamlData.Settings.FileTypes
-Sync-SentinelWebContent -Locations $YamlData.Locations -FileTypes $FileTypes
-# --- PHASE 3: GENERATION ---
-Write-Host "`nPHASE 3: Generating Web Architecture..." -ForegroundColor Cyan
+# 2. Generate Category Metadata & Auto-Populate from Content Seeds
+foreach ($loc in $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }) {
+    $CleanSubFolder = $loc.WebSubFolder.Replace("'", "")
+    $SubPath = Join-Path $TargetWebsitePath $CleanSubFolder
+    
+    if (Test-Path $SubPath) {
+        # A. Create _category_.yml for deep-nesting support
+        Get-ChildItem $SubPath -Recurse -Directory | ForEach-Object {
+            Write-SentinelCategoryYaml -FolderPath $_.FullName -FolderName $_.Name
+        }
+
+        # B. Template Auto-Population (The "Make" Phase)
+        # Bridges the gap between 'content-seeds/docs/index - ID.md' and the site
+        $SeedSource = Join-Path $YamlData.Settings.TemplateDir 'content-seeds/docs'
+        $SpecificSeed = Join-Path $SeedSource "index - $($CleanSubFolder).md"
+
+        if (Test-Path $SpecificSeed) {
+            Write-Host "    $($Global:Icons.Check) Auto-Populating: $CleanSubFolder" -ForegroundColor Gray
+            
+            # Use your existing build function to process the template
+            # This ensures any placeholders inside the seed are resolved
+            $Result = Build-WebPageFromTemplate `
+                -SourceFiles (Get-Item $SpecificSeed) `
+                -TargetFolder $SubPath `
+                -AssetExts @('.jpg', '.png', '.svg') `
+                -Overwrite $true `
+                -FolderName $CleanSubFolder `
+                -RootType 'web-root'
+
+            # Standardize naming for Docusaurus
+            $GeneratedFile = Join-Path $SubPath "$($CleanSubFolder).md"
+            if (Test-Path $GeneratedFile) {
+                Move-Item $GeneratedFile (Join-Path $SubPath 'index.md') -Force
+            }
+        }
+    }
+}
+
+# --- PHASE 4: WEB PAGE GENERATION ---
+Write-Host "`nPHASE 4: Generating Web Pages..." -ForegroundColor Cyan
 
 $stats = @{ Scanned = 0; Created = 0; Updated = 0; Skipped = 0; Errors = 0 }
 $AssetExts = Get-SentinelWebExtensions -FileTypeData $YamlData.FileTypes
 
+# Use the filtered WebLocations list
 foreach ($loc in $WebLocations) {
-    # Skip the engine itself if it's already handled by the sync pass
-    if ($loc.RootType -eq "web-root") { continue }
+    if ($loc.RootType -eq 'web-root') { continue }
 
-    $SandboxRoot = Join-Path $TargetWebsitePath $loc.WebSubFolder
-    $AssetExts = Get-SentinelWebExtensions -FileTypeData $FileTypes
-
+    $CleanSubFolder = $loc.WebSubFolder.Replace("'", "")
+    $SandboxRoot = Join-Path $TargetWebsitePath $CleanSubFolder
+    
     Write-Host "  Processing Site: $($loc.Name)" -ForegroundColor Magenta
 
-    # Group files by your GroupSeparator (e.g., -.-)
+    # Group files by GroupSeparator
     $Groups = Get-ChildItem $SandboxRoot -Recurse -File | Group-Object {
         if ($_.BaseName -match "(.*)$([regex]::Escape($loc.GroupSeparator))") { $Matches[1] } else { $_.BaseName }
     }
@@ -118,7 +171,6 @@ foreach ($loc in $WebLocations) {
     foreach ($group in $Groups) {
         $stats.Scanned++
 
-        # Build-WebPageFromTemplate now creates the .mdx right next to the synced images
         $Result = Build-WebPageFromTemplate `
             -SourceFiles $group.Group `
             -TargetFolder $group.Group[0].DirectoryName `
@@ -134,10 +186,10 @@ foreach ($loc in $WebLocations) {
             default   { $stats.Errors++ }
         }
 
-        # Odometer update (Using the count from Phase 0 or $Groups.Count)
-        Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $group.Name -Current $stats.Scanned -Total $Groups.Count -Time "00:00"
+        Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $group.Name -Current $stats.Scanned -Total $Groups.Count -Time '00:00'
     }
 }
+
 # --- FINAL: UPDATE REGISTRY ---
 $RegPath = Join-Path $YamlData.Settings.TemplateDir "core-config/nav-registry.json"
 if (Test-Path $RegPath) {
