@@ -60,58 +60,59 @@
 
 'Locations':
   - 'Name': 'Source Studio Engine'
+    'Role': 'Website'
+    'RootType': 'web-root'
+    'WebSubFolder': 'docs'
     'Path': 'C:\Source\GEEK\Sentinel\website\docs'
     'SitePath': 'C:\Source_Studio\website'
-    'Role': 'Website'
-    'WebSubFolder': 'docs'
-    'RootType': 'web-root'
+    'GroupSeparator': '-.-'
     'AutoStart': true
 
   - 'Name': 'Culinary Cuisine'
-    'Path': 'C:\Source\GEEK\culinary-cuisine\website'
-    'SitePath': 'C:\Source_Studio\website'
     'Role': 'Website'
+    'RootType': 'web-culinary'
     'WebSubFolder': 'culinary-cuisine'
+    'Path': 'C:\Source\GEEK\culinary-cuisine\website'
+    'GroupSeparator': '-.-'
+    'SitePath': 'C:\Source_Studio\website'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
     'Template': 'recipe-card'
-    'RootType': 'web-culinary'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
     'PurgeOrphan': true
-    'GroupSeparator': '-.-'
     'Structure':
       - 'Event'
 
   - 'Name': 'jems-tones'
-    'Path': 'C:\Source\GEEK\Photography_Hobby\website'
-    'SitePath': 'C:\Source_Studio\website'
     'Role': 'Website'
+    'RootType': 'web-gallery'
     'WebSubFolder': 'jems-tones'
+    'Path': 'C:\Source\GEEK\Photography_Hobby\website'
+    'GroupSeparator': '-.-'
+    'SitePath': 'C:\Source_Studio\website'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
     'Template': 'masonry-grid'
-    'RootType': 'web-gallery'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
     'PurgeOrphan': true
-    'GroupSeparator': '-.-'
     'Structure':
       - 'Event'
 
   - 'Name': 'millermade-handcrafted'
-    'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
-    'SitePath': 'C:\Source_Studio\website'
     'Role': 'Website'
+    'RootType': 'web-shop'
     'WebSubFolder': 'millermade-handcrafted'
+    'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
+    'GroupSeparator': '-.-'
+    'SitePath': 'C:\Source_Studio\website'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
     'Template': 'hand-crafted'
-    'RootType': 'web-shop'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
     'PurgeOrphan': true
-    'GroupSeparator': '-.-'
     'Structure':
       - 'Event'
 
