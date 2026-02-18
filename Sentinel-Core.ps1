@@ -14,30 +14,61 @@ function Global:Get-SentinelWebLocations {
     return $Locations | Where-Object {
         $_.Role -eq 'Website' -and -not [string]::IsNullOrWhiteSpace($_."'SitePath'")
     }
-}
-
-function Global:Invoke-SentinelBranding {
+}function Global:Invoke-SentinelBranding {
     param([string]$SitePath, [string]$TemplateDir)
 
     Write-Host "`n$($Global:Icons.Check) Injecting Branding & Configs..." -ForegroundColor Cyan
 
-    # A. Config Overlays: Pushing JS & JSON to Root
-    $SrcCfg = Join-Path $TemplateDir "core-config"
+    # 1. Config & Core Overlays (docusaurus.config.js, sidebars.js, nav-registry.json)
+    $SrcCfg = Join-Path $TemplateDir 'core-config'
     if (Test-Path $SrcCfg) {
-        # Copy .js and .json (including nav-registry.json) to website root
-        Get-ChildItem $SrcCfg -Include *.js, *.json | Copy-Item -Destination $SitePath -Force
+        # Copy root-level configs (.js, .json, .yml) to site root
+        Get-ChildItem $SrcCfg -Include *.js, *.json, *.yml | Where-Object { $_.Name -ne 'custom.css' -and $_.Name -ne 'index.js' } | Copy-Item -Destination $SitePath -Force
 
-        # Deploy CSS to src/css
-        $DstCSS = Join-Path $SitePath "src/css/custom.css"
+        # A. Update Global CSS (src/css/custom.css)
+        $DstCSS = Join-Path $SitePath 'src/css/custom.css'
         if (!(Test-Path (Split-Path $DstCSS))) { New-Item (Split-Path $DstCSS) -ItemType Directory -Force | Out-Null }
-        Copy-Item (Join-Path $SrcCfg "custom.css") $DstCSS -Force
+        if (Test-Path (Join-Path $SrcCfg 'custom.css')) {
+            Copy-Item (Join-Path $SrcCfg 'custom.css') $DstCSS -Force
+        }
+
+        # B. Update Homepage Component (src/pages/index.js)
+        $DstHome = Join-Path $SitePath 'src/pages/index.js'
+        if (!(Test-Path (Split-Path $DstHome))) { New-Item (Split-Path $DstHome) -ItemType Directory -Force | Out-Null }
+        if (Test-Path (Join-Path $SrcCfg 'index.js')) {
+            Copy-Item (Join-Path $SrcCfg 'index.js') $DstHome -Force
+        }
     }
 
-    # B. Branding Assets: Pushing to static/img
-    $SrcImg = Join-Path $TemplateDir "branding/img"
-    $DstImg = Join-Path $SitePath "static/img"
+    # 2. Component Distribution (GalleryView, ProductView, etc.)
+    $SrcComp = Join-Path $TemplateDir 'components'
+    $DstComp = Join-Path $SitePath 'src/components'
+    if (Test-Path $SrcComp) {
+        if (!(Test-Path $DstComp)) { New-Item $DstComp -ItemType Directory -Force | Out-Null }
+        Copy-Item (Join-Path $SrcComp '*') $DstComp -Force
+    }
+
+    # 3. Branding Assets (Images)
+    $SrcImg = Join-Path $TemplateDir 'branding/img'
+    $DstImg = Join-Path $SitePath 'static/img'
     if (Test-Path $SrcImg) {
+        if (!(Test-Path $DstImg)) { New-Item $DstImg -ItemType Directory -Force | Out-Null }
         robocopy "$SrcImg" "$DstImg" /E /R:0 /W:0 /NJH /NJS /NDL /NFL
+    }
+
+    # 4. Content Seed Population (Static Copy for now)
+    $SrcSeeds = Join-Path $TemplateDir 'content-seeds'
+    if (Test-Path $SrcSeeds) {
+        Write-Host "  $($Global:Icons.Info) Populating content seeds..." -ForegroundColor Gray
+        
+        Get-ChildItem (Join-Path $SrcSeeds 'docs') -Filter "index - *.md" | ForEach-Object {
+            $InstanceID = ($_.BaseName -replace 'index - ', '').Trim()
+            $TargetDir = Join-Path $SitePath $InstanceID
+            
+            if (Test-Path $TargetDir) {
+                Copy-Item $_.FullName (Join-Path $TargetDir 'index.md') -Force
+            }
+        }
     }
 }
 
@@ -64,7 +95,7 @@ function Global:Initialize-SentinelTemplates {
     $Configs = @{
         "core-config/custom.css"           = ":root { --ifm-color-primary: #2e8555; } .navbar { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.1); } .recipe-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 20px; } .media-section { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }"
 
-        "components/RecipeCard.js"         = @"
+        "components/RecipeCard.js"         = @'
 import React from 'react';
 export default function RecipeCard({children, title}) {
     return (
@@ -76,8 +107,8 @@ export default function RecipeCard({children, title}) {
         </div>
     );
 }
-"@
-        "components/ProductView.js"        = @"
+'@
+        "components/ProductView.js"        = @'
 import React from 'react';
 export default function ProductView({children, title}) {
     return (
@@ -89,7 +120,7 @@ export default function ProductView({children, title}) {
         </div>
     );
 }
-"@
+'@
         "components/GalleryView.js"        = "import React from 'react';`nexport default function GalleryView({children}) { return (<div className='gallery-grid' style={{display:'flex', flexWrap:'wrap', gap:'10px'}}>{children}</div>); }"
     }
 
@@ -125,21 +156,23 @@ function Global:Write-SentinelDocusaurusConfig {
 
     $Plugins = ""
     foreach ($loc in $Locations) {
-        # SKIP: Only process Website roles that aren't the primary 'docs' folder
-        if ($loc.Role -ne 'Website' -or $loc.WebSubFolder -eq 'docs' -or [string]::IsNullOrWhiteSpace($loc.WebSubFolder)) { continue }
+        # Standardize folder name (Remove potential single quotes from YAML)
+        $Folder = if ($loc.WebSubFolder) { $loc.WebSubFolder.Replace("'", "") } else { "" }
+        
+        # SKIP: Role must be Website, and we skip the default 'docs' folder
+        if ($loc.Role -ne 'Website' -or $Folder -eq 'docs' -or [string]::IsNullOrWhiteSpace($Folder)) { continue }
 
-        # Generate a clean JavaScript object string for each plugin
-        $Plugins += "    ['@docusaurus/plugin-content-docs', { id: '$($loc.WebSubFolder)', path: '$($loc.WebSubFolder)', routeBasePath: '$($loc.WebSubFolder)', sidebarPath: require.resolve('./sidebars.js') }],`n"
+        # Register each folder as a unique Docusaurus documentation instance
+        $Plugins += "    ['@docusaurus/plugin-content-docs', { id: '$Folder', path: '$Folder', routeBasePath: '$Folder', sidebarPath: require.resolve('./sidebars.js') }],`n"
     }
 
-    $ConfigTemplate = @"
+    $ConfigTemplate = @'
 module.exports = {
   title: 'Source Studio',
   tagline: 'Sentinel Generated',
   url: 'http://millerjohneric.asuscomm.com:3000',
   baseUrl: '/',
   onBrokenLinks: 'warn',
-  favicon: 'img/favicon.ico',
   presets: [
     ['classic', {
       docs: { path: 'docs', sidebarPath: require.resolve('./sidebars.js') },
@@ -150,7 +183,7 @@ module.exports = {
 $Plugins
   ],
 };
-"@
+'@
     $ConfigTemplate | Out-File (Join-Path $SitePath "docusaurus.config.js") -Encoding UTF8 -Force
 }
 
@@ -159,12 +192,19 @@ function Global:Write-SentinelSidebars {
 
     $Entries = ""
     foreach ($loc in $Locations) {
-        if ([string]::IsNullOrWhiteSpace($loc.WebSubFolder)) { continue }
-        $Id = if ($loc.WebSubFolder -eq 'docs') { "defaultSidebar" } else { $loc.WebSubFolder }
+        # Standardize path by removing quotes as per Sentinel-Core logic
+        $Folder = if ($loc.WebSubFolder) { $loc.WebSubFolder.Replace("'", "") } else { "" }
+        
+        if ([string]::IsNullOrWhiteSpace($Folder)) { continue }
+
+        # The 'docs' folder is usually the 'defaultSidebar' in Docusaurus classic
+        $Id = if ($Folder -eq 'docs') { 'defaultSidebar' } else { $Folder }
+        
+        # We use 'dirName: .' because each plugin instance is scoped to its own folder
         $Entries += "  '$Id': [{type: 'autogenerated', dirName: '.'}],`n"
     }
 
-    "module.exports = {`n$Entries};" | Out-File (Join-Path $SitePath "sidebars.js") -Encoding UTF8 -Force
+    "module.exports = {`n$Entries};" | Out-File (Join-Path $SitePath 'sidebars.js') -Encoding UTF8 -Force
 }
 
 function Global:Send-SentinelNotification {
@@ -185,7 +225,7 @@ function Global:Send-SentinelNotification {
 
     # 2. Body Construction (Safe Quoting via Here-String)
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
-    $Body = @"
+    $Body = @'
 Sentinel Mission Report: $JobName
 --------------------------------------------------
 Timestamp: $Timestamp
@@ -198,7 +238,7 @@ Skipped:   $($Stats.Skipped)
 Errors:    $($Stats.Errors)
 --------------------------------------------------
 Site: http://millerjohneric.asuscomm.com:3000
-"@
+'@
 
     # 3. Secure Splatting (Fixed Quotes & Logic)
     $MailParams = @{
@@ -475,10 +515,18 @@ function Global:Get-SentinelWebExtensions {
 }
 
 function Global:Write-SentinelCategoryYaml {
-    param($FolderPath, $FolderName)
-    $Path = Join-Path $FolderPath "_category_.yml"
-    $Content = "label: '$FolderName'`nlink:`n  type: 'generated-index'`n  description: 'View $FolderName collection.'"
-    $Content | Set-Content $Path -Encoding UTF8 -Force
+    param([string]$FolderPath, [string]$FolderName)
+
+    # Clean the name (e.g., 'dinners-beef' -> 'Dinners Beef')
+    $Text = (Get-Culture).TextInfo.ToTitleCase($FolderName.Replace("-", " "))
+    
+    $Content = @'
+label: '$Text'
+link:
+  type: 'generated-index'
+  description: 'Exploring the $Text category.'
+'@
+    $Content | Out-File (Join-Path $FolderPath '_category_.yml') -Encoding UTF8 -Force
 }
 
 function Global:Write-SentinelRecipeIndex {
@@ -789,7 +837,7 @@ function Global:Initialize-SentinelTemplates {
     $Configs = @{
         "core-config/custom.css"           = ":root { --ifm-color-primary: #2e8555; } .navbar { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.1); } .recipe-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 20px; } .media-section { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }"
 
-        "components/RecipeCard.js"         = @"
+        "components/RecipeCard.js"         = @'
 import React from 'react';
 export default function RecipeCard({children, title}) {
     return (
@@ -801,8 +849,8 @@ export default function RecipeCard({children, title}) {
         </div>
     );
 }
-"@
-        "components/ProductView.js"        = @"
+'@
+        "components/ProductView.js"        = @'
 import React from 'react';
 export default function ProductView({children, title}) {
     return (
@@ -814,7 +862,7 @@ export default function ProductView({children, title}) {
         </div>
     );
 }
-"@
+'@
         "components/GalleryView.js"        = "import React from 'react';`nexport default function GalleryView({children}) { return (<div className='gallery-grid' style={{display:'flex', flexWrap:'wrap', gap:'10px'}}>{children}</div>); }"
     }
 
@@ -886,25 +934,42 @@ function Global:Initialize-SentinelWebRoot {
 function Global:Invoke-SentinelBranding {
     param([string]$SitePath, [string]$TemplateDir)
 
-    Write-Host "`n$($Global:Icons.Check) Injecting Branding & Configs..." -ForegroundColor Cyan
+    Write-Host "`n$($Global:Icons.Check) Injecting Branding Assets..." -ForegroundColor Cyan
 
-    # A. Config Overlays: Pushing JS & JSON to Root
-    $SrcCfg = Join-Path $TemplateDir "core-config"
-    if (Test-Path $SrcCfg) {
-        # Copy .js and .json (including nav-registry.json) to website root
-        Get-ChildItem $SrcCfg -Include *.js, *.json | Copy-Item -Destination $SitePath -Force
+    $BrandingSrc = Join-Path $TemplateDir 'branding'
+    $StaticDest  = Join-Path $SitePath 'static'
+    $ImgDest     = Join-Path $StaticDest 'img'
 
-        # Deploy CSS to src/css
-        $DstCSS = Join-Path $SitePath "src/css/custom.css"
-        if (!(Test-Path (Split-Path $DstCSS))) { New-Item (Split-Path $DstCSS) -ItemType Directory -Force | Out-Null }
-        Copy-Item (Join-Path $SrcCfg "custom.css") $DstCSS -Force
+    if (!(Test-Path $ImgDest)) { 
+        New-Item -Path $ImgDest -ItemType Directory -Force | Out-Null 
     }
 
-    # B. Branding Assets: Pushing to static/img
-    $SrcImg = Join-Path $TemplateDir "branding/img"
-    $DstImg = Join-Path $SitePath "static/img"
-    if (Test-Path $SrcImg) {
-        robocopy "$SrcImg" "$DstImg" /E /R:0 /W:0 /NJH /NJS /NDL /NFL
+    if (Test-Path $BrandingSrc) {
+        $FaviconPath = Join-Path $BrandingSrc 'favicon.ico'
+        if (Test-Path $FaviconPath) {
+            Copy-Item $FaviconPath -Destination $StaticDest -Force
+            Write-Host '  → Favicon injected.' -ForegroundColor Gray
+        }
+
+        $LogoPath = Join-Path $BrandingSrc 'logo.svg'
+        if (Test-Path $LogoPath) {
+            Copy-Item $LogoPath -Destination $ImgDest -Force
+            Write-Host '  → Logo.svg injected.' -ForegroundColor Gray
+        }
+    }
+
+    # FIX: CSS Path joining for PowerShell 5.1 compatibility
+    $SrcCfg = Join-Path $TemplateDir 'core-config'
+    if (Test-Path $SrcCfg) {
+        $SrcDir = Join-Path $SitePath 'src'
+        $DstCSS = Join-Path $SrcDir 'css'
+        
+        if (!(Test-Path $DstCSS)) { 
+            New-Item -Path $DstCSS -ItemType Directory -Force | Out-Null 
+        }
+        
+        Get-ChildItem $SrcCfg -Filter '*.css' | Copy-Item -Destination $DstCSS -Force
+        Write-Host '  → CSS Overlays applied.' -ForegroundColor Gray
     }
 }
 
@@ -958,7 +1023,7 @@ function Global:Send-SentinelNotification {
 
     # 2. Body Construction (Safe Quoting via Here-String)
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
-    $Body = @"
+    $Body = @'
 Sentinel Mission Report: $JobName
 --------------------------------------------------
 Timestamp: $Timestamp
@@ -971,15 +1036,15 @@ Skipped:   $($Stats.Skipped)
 Errors:    $($Stats.Errors)
 --------------------------------------------------
 Site: http://millerjohneric.asuscomm.com:3000
-"@
+'@
 
     # 3. Secure Splatting (Fixed Quotes & Logic)
     $MailParams = @{
         'To'          = $Conf.To
         'From'        = $script:GmailUser
-        'Subject'     = "Sentinel Report: $JobName ($($Stats.Created) New)"
+        'Subject'     = 'Sentinel Report: $JobName ($($Stats.Created) New)'
         'Body'        = $Body
-        'SmtpServer'  = "smtp.gmail.com"
+        'SmtpServer'  = 'smtp.gmail.com'
         'Port'        = 587
         'UseSsl'      = $true
         # Important: Password must be converted to SecureString for PSCredential
@@ -1004,7 +1069,7 @@ function Global:Start-SentinelWebsite {
     param([string]$Path)
     Write-Host "  $($Global:Icons.Check) Handing off to Detached Node Server..." -ForegroundColor Green
     # Detaches the process so the website stays up after the PS window closes
-    Start-Process cmd -ArgumentList "/c cd /d `"$Path`" && start /min npm start"
+    Start-Process cmd -ArgumentList '/c cd /d `'$Path`' && start /min npm start'
 }
 
 function Global:Sync-SentinelWebContent {
@@ -1076,14 +1141,22 @@ function Global:Write-SentinelDocusaurusConfig {
         $Plugins += "    ['@docusaurus/plugin-content-docs', { id: '$($loc.WebSubFolder)', path: '$($loc.WebSubFolder)', routeBasePath: '$($loc.WebSubFolder)', sidebarPath: require.resolve('./sidebars.js') }],`n"
     }
 
-    $ConfigTemplate = @"
+    $ConfigTemplate = @'
 module.exports = {
   title: 'Source Studio',
   tagline: 'Sentinel Generated',
   url: 'http://millerjohneric.asuscomm.com:3000',
   baseUrl: '/',
   onBrokenLinks: 'warn',
-  favicon: 'img/favicon.ico',
+  favicon: 'favicon.ico', 
+  themeConfig: {
+    navbar: {
+      logo: {
+        alt: 'Source Studio Logo',
+        src: 'img/logo.svg', 
+      },
+    },
+  },
   presets: [
     ['classic', {
       docs: { path: 'docs', sidebarPath: require.resolve('./sidebars.js') },
@@ -1094,7 +1167,7 @@ module.exports = {
 $Plugins
   ],
 };
-"@
+'@
     $ConfigTemplate | Out-File (Join-Path $SitePath "docusaurus.config.js") -Encoding UTF8 -Force
 }
 
