@@ -103,9 +103,13 @@ foreach ($loc in $WebLocs) {
         
         if (Test-Path $MediaSource) {
             if (Test-Path $TemplatePath) {
-                # Approved Verb: Invoke-
-                Invoke-SentinelRecipeContent -SourceDataDir $MediaSource -TargetDir $TargetDir -TemplatePath $TemplatePath
-                
+                $Separator = if ($loc.GroupSeparator) { $loc.GroupSeparator } else { '-.-' }
+
+                Invoke-SentinelRecipeContent `
+                    -SourceDataDir $loc.Path `
+                    -TargetDir $TargetPath `
+                    -TemplatePath $TemplateFile `
+                    -GroupSeparator $Separator
                 # Copy assets (images/videos) alongside generated markdown
                 robocopy $MediaSource $TargetDir /E /R:0 /W:0 /NJH /NJS /NDL /NFL /NC /NS /NP
                 $Stats.Created++
@@ -135,24 +139,39 @@ Clear-SentinelOdometer
 
 # NEW: Add a small delay to ensure the file system handles the robocopy/write operations
 Start-Sleep -Seconds 2 
-
 # --- PHASE 3: FINALIZING CONFIGS & REGISTRY ---
 Write-Host "`nPHASE 3: Patching Dynamic Configs..." -ForegroundColor Cyan
 
 $RegPath = Join-Path $YamlData.Settings.TemplateDir "core-config/nav-registry.json"
 if (Test-Path $RegPath) {
-    # Using -Raw to ensure we get a clean string for conversion
     $Reg = Get-Content $RegPath -Raw | ConvertFrom-Json
-    
-    # Use Add-Member to force these properties into existence
     $Reg | Add-Member -MemberType NoteProperty -Name 'lastUpdate' -Value (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") -Force
     $Reg | Add-Member -MemberType NoteProperty -Name 'version' -Value '20.28' -Force
-
     $Reg | ConvertTo-Json | Out-File $RegPath -Encoding UTF8 -Force
     Write-Host "  $($Global:Icons.Check) Registry Updated: $($Reg.lastUpdate)" -ForegroundColor Gray
 }
 
-# ADDED: Settle time for the file system before Sidebar generation
+# --- PHASE 3: DIRECTORY SCAN & SIDEBARS ---
+Write-Host "`nPHASE 3: Generating Navigation & Sidebars..." -ForegroundColor Cyan
+
+foreach ($loc in $Locs) {
+    if ($loc.Role -eq 'Website' -and $loc.WebSubFolder) {
+        $TargetPath = Join-Path $TargetWebsitePath $loc.WebSubFolder
+        
+        if (Test-Path $TargetPath) {
+            Write-Host "  $($Global:Icons.Arrow) Scanning structure for $($loc.Name)..." -ForegroundColor Gray
+            
+            # Recursively find all subfolders and create their Docusaurus metadata
+            $SubDirs = Get-ChildItem $TargetPath -Recurse | Where-Object { $_.PSIsContainer }
+            foreach ($dir in $SubDirs) {
+                $CleanLabel = (Get-Culture).TextInfo.ToTitleCase($dir.Name.Replace("-", " "))
+                Write-SentinelCategoryYaml -Path $dir.FullName -Label $CleanLabel
+            }
+        }
+    }
+}
+
+# Settle time for file system before JS generation
 Start-Sleep -Seconds 2
 
 Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $Locs
