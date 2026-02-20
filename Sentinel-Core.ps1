@@ -72,64 +72,46 @@ function Global:Get-SentinelWebLocations {
     }
 }
 
-
 function Global:Send-SentinelNotification {
-    param(
-        [Parameter(Mandatory=$true)] [hashtable]$Stats,
-        [Parameter(Mandatory=$true)] [timespan]$Duration,
-        [string]$JobName = "Mission Control"
-    )
+    param($Stats, $Duration, $JobName)
 
-    $Conf = $script:YamlData.Settings.EmailSettings
+    $Email = $YamlData.Settings.EmailSettings
+    # Resolves C:\Source\GEEK\Sentinel\sentinel-media-sync\.secure\gmail.cred
+    $CredPath = Join-Path $PSScriptRoot $Email.CredPath
 
-    # 1. Validation Logic
-    if (-not $Conf.Enabled) { return }
-    if ([string]::IsNullOrWhiteSpace($script:AppPassword)) {
-        Write-Host "  $($Global:Icons.Warning) Email skipped: AppPassword not found." -ForegroundColor Yellow
+    if (!(Test-Path $CredPath)) {
+        Write-Host "  $($Global:Icons.Error) Email failed: Credentials missing at $CredPath" -ForegroundColor Red
         return
     }
 
-    # 2. Body Construction (Safe Quoting via Here-String)
-    $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
-    $Body = @"
-Sentinel Mission Report: $JobName
---------------------------------------------------
-Timestamp: $Timestamp
-Duration:  $($Duration.ToString('mm\:ss'))
+    try {
+        $Cred = Import-CliXml -Path $CredPath
+        $Body = @"
+Sentinel Mission Report
+-----------------------
+Job: $JobName
+Duration: $($Duration.Minutes)m $($Duration.Seconds)s
 
-[CHANGE SUMMARY]
-Created:   $($Stats.Created)
-Updated:   $($Stats.Updated)
-Skipped:   $($Stats.Skipped)
-Errors:    $($Stats.Errors)
---------------------------------------------------
-Site: http://millerjohneric.asuscomm.com:3000
+Results:
+- Scanned: $($Stats.Scanned)
+- Created: $($Stats.Created)
+- Errors:  $($Stats.Errors)
 "@
 
-    # 3. Secure Splatting (Fixed Quotes & Logic)
-    $MailParams = @{
-        'To'          = $Conf.To
-        'From'        = $script:GmailUser
-        'Subject'     = "Sentinel Report: $JobName ($($Stats.Created) New)"
-        'Body'        = $Body
-        'SmtpServer'  = "smtp.gmail.com"
-        'Port'        = 587
-        'UseSsl'      = $true
-        # Important: Password must be converted to SecureString for PSCredential
-        'Credential'  = New-Object System.Management.Automation.PSCredential(
-            $script:GmailUser,
-            ($script:AppPassword | ConvertTo-SecureString -AsPlainText -Force)
-        )
-        'ErrorAction' = 'Stop'
-    }
-
-    # 4. Execution
-    try {
-        Send-MailMessage @MailParams
-        Write-Host "  $($Global:Icons.Check) Mission Report Emailed to $($Conf.To)." -ForegroundColor Gray
+        Send-MailMessage `
+            -To $Email.To `
+            -From $Email.To `
+            -Subject "[$JobName] Build Success" `
+            -Body $Body `
+            -SmtpServer 'smtp.gmail.com' `
+            -Port 587 `
+            -UseSsl `
+            -Credential $Cred
+            
+        Write-Host "  $($Global:Icons.Check) Mission Report Sent to $($Email.To)" -ForegroundColor Gray
     }
     catch {
-        Write-Host "  $($Global:Icons.Error) Email Failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  $($Global:Icons.Error) SMTP Error: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
@@ -613,15 +595,13 @@ function Global:Write-SentinelDocusaurusConfig {
     $NavbarItems = ""
 
     foreach ($loc in $Locations) {
-        # Skip if no subfolder or if it's the default 'docs' folder
-        if ($null -eq $loc.WebSubFolder -or $loc.WebSubFolder -eq "docs") { continue }
+        if ($null -eq $loc.WebSubFolder -or $loc.WebSubFolder -eq 'docs') { continue }
         
-        $ID = $loc.WebSubFolder.Replace("-", "")
+        $ID = $loc.WebSubFolder.Replace('-', '')
         $FolderName = $loc.WebSubFolder
-        $SidebarName = "sidebars" + ($ID.Substring(0,1).ToUpper() + $ID.Substring(1)) + ".js"
-        $Label = (Get-Culture).TextInfo.ToTitleCase($FolderName.Replace("-", " "))
+        $SidebarName = 'sidebars' + ($ID.Substring(0,1).ToUpper() + $ID.Substring(1)) + '.js'
+        $Label = (Get-Culture).TextInfo.ToTitleCase($FolderName.Replace('-', ' '))
 
-        # 1. Add Plugin Instance
         $PluginBlocks += @"
     [
       '@docusaurus/plugin-content-docs',
@@ -633,8 +613,6 @@ function Global:Write-SentinelDocusaurusConfig {
       },
     ],
 "@
-
-        # 2. Add Navbar Link
         $NavbarItems += "        {to: '/$FolderName/', label: '$Label', position: 'left'},`n"
     }
 
@@ -645,13 +623,19 @@ const config = {
   'url': 'http://localhost:3000',
   'baseUrl': '/',
   'onBrokenLinks': 'ignore',
-  'onBrokenMarkdownLinks': 'warn',
+  'markdown': {
+    'mermaid': true,
+  },
   'favicon': 'img/favicon.ico',
   'presets': [
     [
       'classic',
       {
-        'docs': { 'sidebarPath': require.resolve('./sidebars.js') },
+        'docs': { 
+          'sidebarPath': require.resolve('./sidebars.js'),
+          'path': 'docs',
+          'routeBasePath': 'docs',
+        },
         'theme': { 'customCss': require.resolve('./src/css/custom.css') },
       },
     ],
@@ -663,7 +647,7 @@ $PluginBlocks
     'navbar': {
       'title': 'Sentinel',
       'items': [
-        {type: 'doc', docId: 'intro', position: 'left', label: 'Docs'},
+        {type: 'doc', docId: 'index', position: 'left', label: 'Docs'},
 $NavbarItems
       ],
     },
@@ -674,7 +658,7 @@ module.exports = config;
 "@
 
     $ConfigContent | Out-File (Join-Path $SitePath 'docusaurus.config.js') -Encoding UTF8 -Force
-    Write-Host "  $($Global:Icons.Check) Generated docusaurus.config.js with Multi-Instance Plugins" -ForegroundColor Gray
+    Write-Host "  $($Global:Icons.Check) Docusaurus Config Generated (Navbar fixed to index)" -ForegroundColor Gray
 }
 function Global:Initialize-SentinelTemplates {
     param([string]$TemplateDir)
