@@ -2,21 +2,29 @@
     {
         "title":  "Source Studio Engine",
         "description":  "Unified web-docs Archive",
-        "link":  "/docs"
+        "link":  "/docs",
+        "lastUpdate":  "2026-02-19 19:14:02",
+        "version":  "20.28"
     },
     {
         "title":  "Culinary Cuisine",
         "description":  "Unified web-culinary Archive",
-        "link":  "/culinary-cuisine"
+        "link":  "/culinary-cuisine",
+        "lastUpdate":  "2026-02-19 19:14:02",
+        "version":  "20.28"
     },
     {
         "title":  "jems-tones",
         "description":  "Unified web-gallery Archive",
-        "link":  "/jems-tones"
+        "link":  "/jems-tones",
+        "lastUpdate":  "2026-02-19 19:14:02",
+        "version":  "20.28"
     },
     {
         "title":  "millermade-handcrafted",
         "description":  "Unified web-shop Archive",
-        "link":  "/millermade-handcrafted"
+        "link":  "/millermade-handcrafted",
+        "lastUpdate":  "2026-02-19 19:14:02",
+        "version":  "20.28"
     }
 ]

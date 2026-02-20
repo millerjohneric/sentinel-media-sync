@@ -7,14 +7,14 @@
   'DriveIcon': 'the-source.ico'
 
 'Root_Layout':
-  'GitHub_Repo': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync'
+  'GitHub_Repo': 'S:\GEEK\Sentinel\sentinel-media-sync'
   'Data_Root': 'C:\Source'
   'Network_Share': '\\GEEK\Source'
   'Mapped_Drive': 'S:\'
 
 'Settings':
   'LogPath': '_log'
-  'TemplateDir': 'C:\Users\mille\Documents\GitHub\sentinel-media-sync\templates'
+  'TemplateDir': 'S:\GEEK\Sentinel\sentinel-media-sync\templates'
   'MonitorDepth': 3
   'PurgeWebsite': true
 #  if prunewebsite, purgewebsite is forced to false
@@ -88,7 +88,7 @@
     'Role': 'Website'
     'RootType': 'web-gallery'
     'WebSubFolder': 'jems-tones'
-    'Path': 'C:\Source\GEEK\Photography_Hobby\website'
+    'Path': 'C:\Source\GEEK\Photography_Hobby\jems-tones'
     'GroupSeparator': '-.-'
     'SitePath': 'C:\Source_Studio\website'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'

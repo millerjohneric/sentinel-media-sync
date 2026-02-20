@@ -1,212 +1,186 @@
 ﻿# ==============================================================================
-# Sentinel Web Gen v20.16 [FULL MISSION COMPLETION]
+# Sentinel Web Gen v20.28 [PHASE 0 REPORTER & ODOMETER RESTORED]
 # ==============================================================================
+
 # --- BOOTSTRAP LIBRARY ---
 $CorePath = Join-Path $PSScriptRoot "Sentinel-Core.ps1"
 if (Test-Path $CorePath) {
-    . $CorePath  # The 'dot' and space before the path is critical!
+    . $CorePath
     Write-Host "  $($Global:Icons.Check) Core Library Loaded." -ForegroundColor Gray
 } else {
-    Write-Error "CRITICAL: Sentinel-Core.ps1 not found at $CorePath"
+    Write-Error "CRITICAL: Sentinel-Core.ps1 not found."
     exit
 }
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$Stats = @{ Scanned = 0; Created = 0; Updated = 0; Skipped = 0; Errors = 0 }
 
+# --- PHASE 0: RAW-SCAN & REPORT ---
+Write-Host "PHASE 0: Scanning Configuration..." -ForegroundColor Cyan
 
-# --- PHASE 0: RAW-SCAN EXTRACTION ---
-Write-Host "PHASE 0: Scanning YAML (Raw String Mode)..." -ForegroundColor Cyan
+$ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
+$YamlData = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$Locs = if ($YamlData.Locations) { $YamlData.Locations } else { $YamlData.locations }
 
-# Read the file as raw text to bypass parser mapping issues
-$RawYaml = Get-Content (Join-Path $PSScriptRoot 'Sentinel-Config.yml') -Raw
+# Identify the Website Root Path
 $TargetWebsitePath = $null
-
-# Split the YAML into individual Location blocks
-# We split by the dash at the start of a line which denotes a new list item
-$Blocks = $RawYaml -split '(?m)^\s*-\s+'
-
-foreach ($Block in $Blocks) {
-    # Check if this specific block contains the web-root marker
-    if ($Block -match "'RootType':\s*'web-root'") {
-        # Extract the SitePath value from this specific block using Regex
-        if ($Block -match "'SitePath':\s*'([^']+)'") {
-            $TargetWebsitePath = $Matches[1]
-            Write-Host "  $($Global:Icons.Check) Found Engine Path: $TargetWebsitePath" -ForegroundColor Gray
-            break
-        }
+foreach ($loc in $Locs) {
+    if ($loc.RootType -eq 'web-root') {
+        $TargetWebsitePath = $loc.SitePath.ToString().Replace("'", "").Trim()
+        break
     }
 }
 
-# Fallback: If Regex fails, try the standard object if it somehow worked
-if (-not $TargetWebsitePath -and $YamlData.Locations) {
-    $Root = $YamlData.Locations | Where-Object { $_."'RootType'" -eq 'web-root' -or $_.RootType -eq 'web-root' }
-    $TargetWebsitePath = if ($Root) { ($Root."'SitePath'" -split "'")[0] } else { $null }
-}
+# Change this line in Sentinel Web Gen.ps1:
+Write-SentinelPhase0 -YamlData $YamlData -TargetWebsitePath $TargetWebsitePath
 
-if ([string]::IsNullOrWhiteSpace($TargetWebsitePath)) {
-    Write-Error "CRITICAL: Could not find 'web-root' SitePath. Ensure 'RootType': 'web-root' is defined in the YAML."
-    exit
-}
+# --- PHASE 1: ENGINE PREP ---
+if ($YamlData.Settings.PurgeWebsite -eq $true) {
+    Write-Host "`n  $($Global:Icons.Warning) PurgeWebsite is TRUE: Wiping engine..." -ForegroundColor Yellow
+    
+    # SAFETY CHECK: Step back if terminal is inside the target folder
+    $CurrentPath = (Get-Location).Path
+    if ($CurrentPath -like "$TargetWebsitePath*") {
+        Write-Host "  $($Global:Icons.Arrow) Terminal detected inside target. Stepping back to parent..." -ForegroundColor Gray
+        Set-Location (Split-Path $TargetWebsitePath -Parent)
+    }
 
-# Standardize the path for Windows
-$TargetWebsitePath = $TargetWebsitePath.Replace("'", "").Trim()
-if ($null -eq $YamlData) {
-    # If you are using a YAML module like powershell-yaml or similar:
-    $YamlData = Get-Content (Join-Path $PSScriptRoot 'Sentinel-Config.yml') -Raw | ConvertFrom-Yaml
-}
-# --- PHASE 0: READYNESS ---
-Initialize-SentinelSecrets
-# --- PHASE 1: ENSURING ENGINE INTEGRITY ---
-if ($YamlData.Settings.PurgeWebsite -and (Test-Path $TargetWebsitePath)) {
-    Write-Host "  $($Global:Icons.Warning) PurgeWebsite is TRUE: Wiping engine..." -ForegroundColor Yellow
-    Remove-Item $TargetWebsitePath -Recurse -Force
+    if (Test-Path $TargetWebsitePath) {
+        # Stop node to release file locks
+        Stop-Process -Name "node" -ErrorAction SilentlyContinue
+        
+        Write-Host "  $($Global:Icons.Arrow) Removing: $TargetWebsitePath" -ForegroundColor Gray
+        Remove-Item $TargetWebsitePath -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if (!(Test-Path $TargetWebsitePath)) {
-    Write-Host "  $($Global:Icons.Warning) Engine missing. Scaffolding..." -ForegroundColor Yellow
-    # Create the parent directory if it doesn't exist
+    Write-Host "  $($Global:Icons.Warning) Engine missing. Scaffolding Docusaurus..." -ForegroundColor Yellow
     $ParentDir = Split-Path $TargetWebsitePath
-    if (!(Test-Path $ParentDir)) { New-Item $ParentDir -ItemType Directory -Force }
-
-    # Run the scaffold command ONE level up
+    New-Item $ParentDir -ItemType Directory -Force | Out-Null
     Set-Location $ParentDir
-    npx create-docusaurus@latest website classic --javascript --skip-install
-
-    # Now that the folder exists, move into it and install
+    cmd /c "echo y | npx create-docusaurus@latest website classic --javascript --skip-install"
     Set-Location $TargetWebsitePath
     npm install
 }
-Purge-SentinelBoilerplate -SitePath $CleanPath
 
-# --- PHASE 2: BRANDING & SYNC ---
-# 1. First, inject branding (This places the "Gold Master" files)
+Remove-SentinelBoilerplate -SitePath $TargetWebsitePath
+
+# --- PHASE 2: CONTENT SEEDING & LIVE ODOMETER ---
+Write-Host "`nPHASE 2: Populating Content & Generating Pages..." -ForegroundColor Cyan
+
 Initialize-SentinelTemplates -TemplateDir $YamlData.Settings.TemplateDir
 Invoke-SentinelBranding -SitePath $TargetWebsitePath -TemplateDir $YamlData.Settings.TemplateDir
 
-# 2. Sync your raw content (Culinary, etc.) into the sandbox
-Sync-SentinelWebContent -Locations $YamlData.Locations -FileTypes $YamlData.Settings.FileTypes
+$WebLocs = $Locs | Where-Object { $null -ne $_.WebSubFolder }
 
-# --- PHASE 3: DYNAMIC ARCHITECTURE (OVERWRITE MASTER) ---
-Write-Host "`nPHASE 3: Patching Dynamic Configs & Categories..." -ForegroundColor Cyan
-
-# 3. NOW write the dynamic config (This overwrites the master with the correct plugin paths)
-Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $YamlData.Locations
-Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $YamlData.Locations
-
-# 4. Generate the Category labels for your deep folders (Bread, Desserts, etc.)
-foreach ($loc in $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }) {
-    $SubPath = Join-Path $TargetWebsitePath $loc.WebSubFolder.Replace("'", "")
-    if (Test-Path $SubPath) {
-        Get-ChildItem $SubPath -Recurse -Directory | ForEach-Object {
-            Write-SentinelCategoryYaml -FolderPath $_.FullName -FolderName $_.Name
-        }
-    }
-}
-# --- PHASE 3: DYNAMIC ARCHITECTURE (OVERWRITE MASTER) ---
-Write-Host "`nPHASE 3: Patching Dynamic Configs & Categories..." -ForegroundColor Cyan
-
-# 1. Update Configs to register folder plugins (culinary-cuisine, etc.)
-Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $YamlData.Locations
-Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $YamlData.Locations
-
-# 2. Generate Category Metadata & Auto-Populate from Content Seeds
-foreach ($loc in $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }) {
-    $CleanSubFolder = $loc.WebSubFolder.Replace("'", "")
-    $SubPath = Join-Path $TargetWebsitePath $CleanSubFolder
+foreach ($loc in $WebLocs) {
+    $Stats.Scanned++
+    $SubFolder = $loc.WebSubFolder.ToString().Replace("'", "")
+    $TargetDir = Join-Path $TargetWebsitePath $SubFolder
     
-    if (Test-Path $SubPath) {
-        # A. Create _category_.yml for deep-nesting support
-        Get-ChildItem $SubPath -Recurse -Directory | ForEach-Object {
-            Write-SentinelCategoryYaml -FolderPath $_.FullName -FolderName $_.Name
+    if (!(Test-Path $TargetDir)) { New-Item $TargetDir -ItemType Directory -Force | Out-Null }
+
+    # Update Odometer for the current location
+    Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $SubFolder -Current $Stats.Scanned -Total $WebLocs.Count -Time $globalStopwatch.Elapsed.ToString("mm\:ss")
+
+    # DYNAMIC TEMPLATE MATCHING
+    if ($null -ne $loc.Template) {
+        $MediaSource = $loc.Path.ToString().Replace("'", "")
+        $TemplateName = $loc.Template.ToString().Replace("'", "")
+        
+        # Map Template Names to sub-folders found in S:\...\content-seeds
+        $TemplateRelPath = switch ($TemplateName) {
+            'recipe-card'   { "recipes\recipe-card.md" }
+            'masonry-grid'  { "gallery\masonry-grid.md" }
+            'hand-crafted'  { "shop\hand-crafted.md" }
+            'intro - docs'  { "docs\intro - docs.md" }
+            Default         { "$TemplateName.md" }
         }
 
-        # B. Template Auto-Population (The "Make" Phase)
-        # Bridges the gap between 'content-seeds/docs/index - ID.md' and the site
-        $SeedSource = Join-Path $YamlData.Settings.TemplateDir 'content-seeds/docs'
-        $SpecificSeed = Join-Path $SeedSource "index - $($CleanSubFolder).md"
-
-        if (Test-Path $SpecificSeed) {
-            Write-Host "    $($Global:Icons.Check) Auto-Populating: $CleanSubFolder" -ForegroundColor Gray
-            
-            # Use your existing build function to process the template
-            # This ensures any placeholders inside the seed are resolved
-            $Result = Build-WebPageFromTemplate `
-                -SourceFiles (Get-Item $SpecificSeed) `
-                -TargetFolder $SubPath `
-                -AssetExts @('.jpg', '.png', '.svg') `
-                -Overwrite $true `
-                -FolderName $CleanSubFolder `
-                -RootType 'web-root'
-
-            # Standardize naming for Docusaurus
-            $GeneratedFile = Join-Path $SubPath "$($CleanSubFolder).md"
-            if (Test-Path $GeneratedFile) {
-                Move-Item $GeneratedFile (Join-Path $SubPath 'index.md') -Force
+        $TemplatePath = Join-Path $YamlData.Settings.TemplateDir "content-seeds\$TemplateRelPath"
+        
+        if (Test-Path $MediaSource) {
+            if (Test-Path $TemplatePath) {
+                # Approved Verb: Invoke-
+                Invoke-SentinelRecipeContent -SourceDataDir $MediaSource -TargetDir $TargetDir -TemplatePath $TemplatePath
+                
+                # Copy assets (images/videos) alongside generated markdown
+                robocopy $MediaSource $TargetDir /E /R:0 /W:0 /NJH /NJS /NDL /NFL /NC /NS /NP
+                $Stats.Created++
+            } else {
+                Write-Host "  $($Global:Icons.Error) Template missing: $TemplatePath" -ForegroundColor Red
+                $Stats.Errors++
             }
+        } else {
+            Write-Host "  $($Global:Icons.Error) Media Source missing: $MediaSource" -ForegroundColor Red
+            $Stats.Errors++
         }
     }
-}
-
-# --- PHASE 4: WEB PAGE GENERATION ---
-Write-Host "`nPHASE 4: Generating Web Pages..." -ForegroundColor Cyan
-
-$stats = @{ Scanned = 0; Created = 0; Updated = 0; Skipped = 0; Errors = 0 }
-$AssetExts = Get-SentinelWebExtensions -FileTypeData $YamlData.FileTypes
-
-# Use the filtered WebLocations list
-foreach ($loc in $WebLocations) {
-    if ($loc.RootType -eq 'web-root') { continue }
-
-    $CleanSubFolder = $loc.WebSubFolder.Replace("'", "")
-    $SandboxRoot = Join-Path $TargetWebsitePath $CleanSubFolder
-    
-    Write-Host "  Processing Site: $($loc.Name)" -ForegroundColor Magenta
-
-    # Group files by GroupSeparator
-    $Groups = Get-ChildItem $SandboxRoot -Recurse -File | Group-Object {
-        if ($_.BaseName -match "(.*)$([regex]::Escape($loc.GroupSeparator))") { $Matches[1] } else { $_.BaseName }
-    }
-
-    foreach ($group in $Groups) {
-        $stats.Scanned++
-
-        $Result = Build-WebPageFromTemplate `
-            -SourceFiles $group.Group `
-            -TargetFolder $group.Group[0].DirectoryName `
-            -AssetExts $AssetExts `
-            -Overwrite $loc.Overwrite `
-            -FolderName $group.Name `
-            -RootType $loc.RootType
-
-        switch ($Result) {
-            'CREATED' { $stats.Created++ }
-            'UPDATED' { $stats.Updated++ }
-            'SKIPPED' { $stats.Skipped++ }
-            default   { $stats.Errors++ }
+    # Handling standard website mirroring (locations without specific templates)
+    elseif ($loc.Role -eq 'Website' -and $SubFolder -ne 'docs') {
+        $Source = if ($loc.Path) { $loc.Path.ToString().Replace("'", "") } else { $null }
+        if ($null -ne $Source -and (Test-Path $Source)) {
+            # Use /MIR for standard websites to keep them identical to source
+            robocopy $Source $TargetDir /MIR /R:0 /W:0 /NJH /NJS /NDL /NFL /NC /NS /NP
+            $Stats.Updated++
         }
-
-        Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $group.Name -Current $stats.Scanned -Total $Groups.Count -Time '00:00'
     }
-}
 
-# --- FINAL: UPDATE REGISTRY ---
+    # Final Odometer update for this loop iteration
+    Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $SubFolder -Current $Stats.Scanned -Total $WebLocs.Count -Time $globalStopwatch.Elapsed.ToString("mm\:ss")
+}
+Clear-SentinelOdometer
+
+# NEW: Add a small delay to ensure the file system handles the robocopy/write operations
+Start-Sleep -Seconds 2 
+
+# --- PHASE 3: FINALIZING CONFIGS & REGISTRY ---
+Write-Host "`nPHASE 3: Patching Dynamic Configs..." -ForegroundColor Cyan
+
 $RegPath = Join-Path $YamlData.Settings.TemplateDir "core-config/nav-registry.json"
 if (Test-Path $RegPath) {
-    $Reg = Get-Content $RegPath | ConvertFrom-Json
-    $Reg.lastUpdate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $Reg.version = "20.16"
-    $Reg | ConvertTo-Json | Out-File $RegPath -Encoding UTF8
+    # Using -Raw to ensure we get a clean string for conversion
+    $Reg = Get-Content $RegPath -Raw | ConvertFrom-Json
+    
+    # Use Add-Member to force these properties into existence
+    $Reg | Add-Member -MemberType NoteProperty -Name 'lastUpdate' -Value (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") -Force
+    $Reg | Add-Member -MemberType NoteProperty -Name 'version' -Value '20.28' -Force
+
+    $Reg | ConvertTo-Json | Out-File $RegPath -Encoding UTF8 -Force
     Write-Host "  $($Global:Icons.Check) Registry Updated: $($Reg.lastUpdate)" -ForegroundColor Gray
 }
 
-Clear-SentinelOdometer
+# ADDED: Settle time for the file system before Sidebar generation
+Start-Sleep -Seconds 2
 
-# --- PHASE 4 & 5: REPORT & LAUNCH ---
-Send-SentinelNotification -Stats $stats -Duration $globalStopwatch.Elapsed -JobName "Web Gen"
+Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $Locs
+Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $Locs
+
+# FINAL STEP: Check if index.md exists in core folders, if not, copy seed
+foreach ($loc in $Locs) {
+    if ($loc.Role -eq 'Website' -and $loc.WebSubFolder) {
+        $TargetIdx = Join-Path $TargetWebsitePath "$($loc.WebSubFolder)\index.md"
+        if (!(Test-Path $TargetIdx)) {
+             Write-Host "  $($Global:Icons.Warning) Missing index for $($loc.Name), creating placeholder..." -ForegroundColor Yellow
+             Write-SentinelRecipeIndex -TargetRoot (Split-Path $TargetIdx) -GroupCount 0
+        }
+    }
+}
+
+# --- PHASE 4: MISSION REPORT & LAUNCH ---
+Write-Host "`nPHASE 4: Finalizing & Handing off to Node..." -ForegroundColor Cyan
+
+if ($YamlData.Settings.EmailSettings.Enabled) {
+    Send-SentinelNotification -Stats $Stats -Duration $globalStopwatch.Elapsed -JobName "Sentinel Web Gen v20.28"
+    Write-Host "  $($Global:Icons.Check) Mission Report Emailed." -ForegroundColor Gray
+}
+
 Start-SentinelWebsite -Path $TargetWebsitePath
 
 $globalStopwatch.Stop()
-Write-Host "`nMISSION COMPLETE. Closing in 5s (Site remains ONLINE)." -ForegroundColor Green
+Write-Host "`nMISSION COMPLETE. Site is LIVE." -ForegroundColor Green
+Set-Location ..
 Start-Sleep -Seconds 5
-exit
+Exit
