@@ -150,8 +150,7 @@ if (Test-Path $RegPath) {
     $Reg | ConvertTo-Json | Out-File $RegPath -Encoding UTF8 -Force
     Write-Host "  $($Global:Icons.Check) Registry Updated: $($Reg.lastUpdate)" -ForegroundColor Gray
 }
-
-# --- PHASE 3: DIRECTORY SCAN & SIDEBARS ---
+# --- PHASE 3: CONFIGURATION & SIDEBARS ---
 Write-Host "`nPHASE 3: Generating Navigation & Sidebars..." -ForegroundColor Cyan
 
 foreach ($loc in $Locs) {
@@ -159,9 +158,9 @@ foreach ($loc in $Locs) {
         $TargetPath = Join-Path $TargetWebsitePath $loc.WebSubFolder
         
         if (Test-Path $TargetPath) {
-            Write-Host "  $($Global:Icons.Arrow) Scanning structure for $($loc.Name)..." -ForegroundColor Gray
+            Write-Host "  $($Global:Icons.Arrow) Scanning nested structure for $($loc.Name)..." -ForegroundColor Gray
             
-            # Recursively find all subfolders and create their Docusaurus metadata
+            # Recursive scan: Find EVERY subfolder and create a _category_.yml
             $SubDirs = Get-ChildItem $TargetPath -Recurse | Where-Object { $_.PSIsContainer }
             foreach ($dir in $SubDirs) {
                 $CleanLabel = (Get-Culture).TextInfo.ToTitleCase($dir.Name.Replace("-", " "))
@@ -171,9 +170,10 @@ foreach ($loc in $Locs) {
     }
 }
 
-# Settle time for file system before JS generation
+# Settle time for file system
 Start-Sleep -Seconds 2
 
+# Final generation of JS configs
 Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $Locs
 Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $Locs
 

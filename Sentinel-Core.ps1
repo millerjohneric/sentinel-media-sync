@@ -282,6 +282,7 @@ function Global:Write-SentinelCategoryYaml {
         [string]$Label
     )
     $YamlPath = Join-Path $Path '_category_.yml'
+    # Ensuring single quotes for keys as per instructions
     $Content = @"
 'label': '$Label'
 'link':
@@ -300,17 +301,6 @@ function Global:Write-SentinelSidebars {
         $SidebarFileName = "sidebars" + ($ID.Substring(0,1).ToUpper() + $ID.Substring(1)) + ".js"
         $SidebarPath = Join-Path $SitePath $SidebarFileName
         $Label = (Get-Culture).TextInfo.ToTitleCase($loc.WebSubFolder.Replace("-", " "))
-        
-        # New Logic: Recursively create _category_.yml for all subdirectories
-        $TargetDir = Join-Path $SitePath $loc.WebSubFolder
-        if (Test-Path $TargetDir) {
-            $SubDirs = Get-ChildItem $TargetDir -Recurse | Where-Object { $_.PSIsContainer }
-            foreach ($dir in $SubDirs) {
-                # Skip system folders like .hidden or _misc if you want, or include them
-                $CleanLabel = (Get-Culture).TextInfo.ToTitleCase($dir.Name.Replace("-", " "))
-                Write-SentinelCategoryYaml -Path $dir.FullName -Label $CleanLabel
-            }
-        }
 
         $Content = @"
 module.exports = {
@@ -329,9 +319,10 @@ module.exports = {
 };
 "@
         $Content | Out-File $SidebarPath -Encoding UTF8 -Force
-        Write-Host "  $($Global:Icons.Check) Created Sidebar & Categories: $SidebarFileName" -ForegroundColor Gray
+        Write-Host "  $($Global:Icons.Check) Created Sidebar: $SidebarFileName" -ForegroundColor Gray
     }
 }
+
 
 function Global:Write-SentinelRecipeIndex {
     param([string]$TargetRoot, [int]$GroupCount)
