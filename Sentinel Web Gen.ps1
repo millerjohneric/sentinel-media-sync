@@ -68,72 +68,51 @@ if (!(Test-Path $TargetWebsitePath)) {
 Remove-SentinelBoilerplate -SitePath $TargetWebsitePath
 
 # --- PHASE 2: CONTENT SEEDING & LIVE ODOMETER ---
-Write-Host "`nPHASE 2: Populating Content & Generating Pages..." -ForegroundColor Cyan
-
-Initialize-SentinelTemplates -TemplateDir $YamlData.Settings.TemplateDir
-Invoke-SentinelBranding -SitePath $TargetWebsitePath -TemplateDir $YamlData.Settings.TemplateDir
-
-$WebLocs = $Locs | Where-Object { $null -ne $_.WebSubFolder }
-
 foreach ($loc in $WebLocs) {
     $Stats.Scanned++
     $SubFolder = $loc.WebSubFolder.ToString().Replace("'", "")
-    $TargetDir = Join-Path $TargetWebsitePath $SubFolder
+    $TargetDir = Join-Path $YamlData.Settings.SitePath $SubFolder
     
-    if (!(Test-Path $TargetDir)) { New-Item $TargetDir -ItemType Directory -Force | Out-Null }
-
-    # Update Odometer for the current location
+    # RESTORE THE ODOMETER CALL HERE
     Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $SubFolder -Current $Stats.Scanned -Total $WebLocs.Count -Time $globalStopwatch.Elapsed.ToString("mm\:ss")
-
-    # DYNAMIC TEMPLATE MATCHING
+    
     if ($null -ne $loc.Template) {
-        $MediaSource = $loc.Path.ToString().Replace("'", "")
-        $TemplateName = $loc.Template.ToString().Replace("'", "")
+        $TemplateRaw = $loc.Template.ToString().Replace("'", "")
         
-        # Map Template Names to sub-folders found in S:\...\content-seeds
-        $TemplateRelPath = switch ($TemplateName) {
-            'recipe-card'   { "recipes\recipe-card.md" }
-            'masonry-grid'  { "gallery\masonry-grid.md" }
-            'hand-crafted'  { "shop\hand-crafted.md" }
-            'intro - docs'  { "docs\intro - docs.md" }
-            Default         { "$TemplateName.md" }
-        }
-
-        $TemplatePath = Join-Path $YamlData.Settings.TemplateDir "content-seeds\$TemplateRelPath"
-        
-        if (Test-Path $MediaSource) {
-            if (Test-Path $TemplatePath) {
-                $Separator = if ($loc.GroupSeparator) { $loc.GroupSeparator } else { '-.-' }
-
-                Invoke-SentinelRecipeContent `
-                    -SourceDataDir $loc.Path `
-                    -TargetDir $TargetPath `
-                    -TemplatePath $TemplateFile `
-                    -GroupSeparator $Separator
-                # Copy assets (images/videos) alongside generated markdown
-                robocopy $MediaSource $TargetDir /E /R:0 /W:0 /NJH /NJS /NDL /NFL /NC /NS /NP
-                $Stats.Created++
-            } else {
-                Write-Host "  $($Global:Icons.Error) Template missing: $TemplatePath" -ForegroundColor Red
-                $Stats.Errors++
-            }
+        if ($TemplateRaw -match '^\[(.+)\](.+)$') {
+            $Category = $Matches[1].ToLower()
+            $TName = $Matches[2].Replace(".md", "") # Strips .md if present
+            $RelPath = "content-seeds\$Category\$TName.md"
         } else {
-            Write-Host "  $($Global:Icons.Error) Media Source missing: $MediaSource" -ForegroundColor Red
-            $Stats.Errors++
+            $RelPath = $TemplateRaw.TrimStart('\')
         }
-    }
-    # Handling standard website mirroring (locations without specific templates)
-    elseif ($loc.Role -eq 'Website' -and $SubFolder -ne 'docs') {
-        $Source = if ($loc.Path) { $loc.Path.ToString().Replace("'", "") } else { $null }
-        if ($null -ne $Source -and (Test-Path $Source)) {
-            # Use /MIR for standard websites to keep them identical to source
-            robocopy $Source $TargetDir /MIR /R:0 /W:0 /NJH /NJS /NDL /NFL /NC /NS /NP
-            $Stats.Updated++
-        }
-    }
 
-    # Final Odometer update for this loop iteration
-    Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $SubFolder -Current $Stats.Scanned -Total $WebLocs.Count -Time $globalStopwatch.Elapsed.ToString("mm\:ss")
+        $TemplatePath = Join-Path $YamlData.Settings.TemplateDir $RelPath
+        
+        if (Test-Path $TemplatePath) {
+            $MediaSource = $loc.Path.ToString().Replace("'", "")
+            $Files = Get-ChildItem $MediaSource -File | Where-Object { $_.Name -ne 'index.md' }
+            $Separator = if ($loc.GroupSeparator) { $loc.GroupSeparator } else { '-.-' }
+            
+            # Calculate groups for the Mission Report
+            $SiteGroups = ($Files | Group-Object { if ($_.Name -contains $Separator) { $_.BaseName.Split($Separator)[0] } else { $_.BaseName } }).Count
+            
+            Invoke-SentinelRecipeContent -SourceDataDir $loc.Path -TargetDir $TargetDir -TemplatePath $TemplatePath -GroupSeparator $Separator
+            
+            # Update individual site reports
+            if ($YamlData.Settings.EmailSettings.Enabled) {
+                $CurrentStatus = if (Get-Process -Name "node" -ErrorAction SilentlyContinue) { "ONLINE" } else { "OFFLINE" }
+                Send-SentinelNotification `
+                    -SiteName $loc.Name `
+                    -Status $CurrentStatus `
+                    -TotalGroups $SiteGroups `
+                    -NewPages $SiteGroups `
+                    -Preserved 0 `
+                    -MirrorTarget $TargetDir `
+                    -SiteUrl "$($YamlData.Settings.SiteUrl)/$SubFolder"
+            }
+        }
+    }
 }
 Clear-SentinelOdometer
 
@@ -187,14 +166,9 @@ foreach ($loc in $Locs) {
         }
     }
 }
-
-# --- PHASE 4: MISSION REPORT & LAUNCH ---
+# --- PHASE 4: FINALIZING & LAUNCH ---
 Write-Host "`nPHASE 4: Finalizing & Handing off to Node..." -ForegroundColor Cyan
-
-if ($YamlData.Settings.EmailSettings.Enabled) {
-    Send-SentinelNotification -Stats $Stats -Duration $globalStopwatch.Elapsed -JobName "Sentinel Web Gen v20.28"
-    Write-Host "  $($Global:Icons.Check) Mission Report Emailed." -ForegroundColor Gray
-}
+Start-SentinelWebsite -Path $TargetWebsitePath
 
 Start-SentinelWebsite -Path $TargetWebsitePath
 

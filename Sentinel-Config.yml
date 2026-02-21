@@ -16,6 +16,9 @@
   'LogPath': '_log'
   'TemplateDir': 'S:\GEEK\Sentinel\sentinel-media-sync\templates'
   'MonitorDepth': 3
+  'SitePath': 'C:\Source_Studio\website'
+  'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+  'TemplateDir': 'S:\GEEK\Sentinel\sentinel-media-sync\templates'
   'PurgeWebsite': true
 #  if prunewebsite, purgewebsite is forced to false
   'PruneWebsite': false
@@ -64,7 +67,6 @@
     'RootType': 'web-root'
     'WebSubFolder': 'docs'
     'Path': 'C:\Source\GEEK\Sentinel\website\docs'
-    'SitePath': 'C:\Source_Studio\website'
     'GroupSeparator': '-.-'
     'AutoStart': true
 
@@ -74,9 +76,7 @@
     'WebSubFolder': 'culinary-cuisine'
     'Path': 'C:\Source\GEEK\Recipes\culinary-cuisine'
     'GroupSeparator': '-.-'
-    'SitePath': 'C:\Source_Studio\website'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'recipe-card'
+    'Template': '[RECIPES]recipe-card'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
@@ -90,9 +90,7 @@
     'WebSubFolder': 'jems-tones'
     'Path': 'C:\Source\GEEK\Photography_Hobby\jems-tones'
     'GroupSeparator': '-.-'
-    'SitePath': 'C:\Source_Studio\website'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'masonry-grid'
+    'Template': '[GALLERY]masonry-grid'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
@@ -106,9 +104,7 @@
     'WebSubFolder': 'millermade-handcrafted'
     'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
     'GroupSeparator': '-.-'
-    'SitePath': 'C:\Source_Studio\website'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-    'Template': 'hand-crafted'
+    'Template': '[SHOP]]hand-crafted'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
