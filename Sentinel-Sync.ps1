@@ -58,16 +58,17 @@ Write-Host "  $($Global:Icons.Check) Seeding engine from YAML sources..." -Foreg
 # Ensure the engine docs directory is ready
 if (!(Test-Path $EngineDocsDir)) { New-Item $EngineDocsDir -ItemType Directory -Force | Out-Null }
 
-# Loop through locations to find EVERY path assigned the 'Website' role
-$WebsiteSources = $YamlData.Locations | Where-Object { $_.ROLE -eq 'Website' }
-
-foreach ($Source in $WebsiteSources) {
-    $SourcePath = $Source.PATH
-    if (Test-Path $SourcePath) {
-        Write-Host "    → Pulling content from: $($Source.NAME)" -ForegroundColor Gray
-        # Copy-Item from the specific source path into the engine docs
-        Copy-Item -Path "$SourcePath\*" -Destination $EngineDocsDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+foreach ($loc in $YamlData.Locations) {
+    if ($loc.Role -ne 'Website') { continue }
+    
+    $Source = $loc.Path
+    $SubFolder = $loc.WebSubFolder
+    $Destination = Join-Path $TargetWebsitePath $SubFolder
+    
+    Write-Host "    $($Global:Icons.Arrow) Pulling content: $($loc.Name) -> $SubFolder" -ForegroundColor Gray
+    
+    # Robocopy logic
+    robocopy $Source $Destination /MIR /R:0 /W:0 /NDL /NFL /NJH /NJS
 }
 
 # 4. Inject Branding & Configs

@@ -271,47 +271,24 @@ function Global:Sync-SentinelWebContent {
     param($Locations, $Settings)
 
     $TargetWebsitePath = $Settings.SitePath.Replace("'", "")
-    $FileTypes = $Settings.FileTypes
     
-    # Build Allowed Extensions List
-    $AllowedExtensions = @()
-    foreach ($Category in $FileTypes.WebContent) {
-        if ($FileTypes.ContainsKey($Category)) {
-            $FileTypes.$Category | ForEach-Object { $AllowedExtensions += "*$_" }
-        } else {
-            $AllowedExtensions += "*$Category"
-        }
-    }
-
     foreach ($loc in $Locations) {
         if ($loc.Role -ne 'Website') { continue }
 
         $Source = $loc.Path.Replace("'", "")
         $SubFolder = $loc.WebSubFolder.Replace("'", "")
         
-        # Mapping: 'docs' goes to site/docs, others become siblings in site/SubFolder
+        # MAPPING: Content goes to C:\Source_Studio\website\<WebSubFolder>
         $Destination = Join-Path $TargetWebsitePath $SubFolder
 
-        if (Test-Path $Source) {
-            Write-Host "  $($Global:Icons.Arrow) Mirroring $SubFolder..." -ForegroundColor Gray
+        Write-Host "  $($Global:Icons.Arrow) Mirroring $SubFolder..." -ForegroundColor Gray
+        
+        # Ensure destination exists
+        if (!(Test-Path $Destination)) { New-Item $Destination -ItemType Directory -Force | Out-Null }
 
-            if (!(Test-Path $Destination)) { New-Item $Destination -ItemType Directory -Force | Out-Null }
-
-            $ExcludeDirs = if ($FileTypes.Exclusions) { $FileTypes.Exclusions } else { @() }
-            $RoboArgs = @($Source, $Destination) + $AllowedExtensions + @("/MIR", "/R:0", "/W:0", "/NDL", "/NFL", "/NJH", "/NJS")
-
-            if ($ExcludeDirs.Count -gt 0) {
-                $RoboArgs += "/XD"
-                $RoboArgs += $ExcludeDirs
-            }
-
-            & robocopy @RoboArgs
-            
-            # Post-Processing: Generate MDX files for grouped assets (Recipes/Gallery)
-            if ($loc.RootType -ne 'web-root') {
-                Invoke-SentinelWebPipeline -loc $loc -Settings $Settings -TargetWebsitePath $TargetWebsitePath
-            }
-        }
+        # Execute Robocopy (Mirror mode)
+        $RoboArgs = @($Source, $Destination, "*.md", "*.mdx", "*.yml", "*.png", "*.jpg", "/MIR", "/R:0", "/W:0", "/NDL", "/NFL")
+        & robocopy @RoboArgs
     }
 }
 
@@ -448,58 +425,57 @@ function Global:Initialize-SentinelSecrets {
 function Global:Initialize-SentinelWebRoot {
     param(
         [string]$RootPath, 
-        $Settings
+        $Settings,
+        $Locations
     )
 
     $CleanPath = $RootPath.Replace("'", "").Trim()
     $Purge = $Settings.PurgeWebsite
     $Prune = $Settings.PruneWebsite
-    $PkgPath = Join-Path $CleanPath 'package.json'
-
-    # Rule: if Prune is true, Purge is forced to false
     if ($Prune) { $Purge = $false }
 
     if (Test-Path $CleanPath) {
-        # 1. THE PURGE: Total Obliteration
         if ($Purge) {
-            Write-Host "  $($Global:Icons.Warning) PurgeWebsite is TRUE: Wiping EVERYTHING..." -ForegroundColor Yellow
+            Write-Host "  $($Global:Icons.Warning) Purge: Wiping EVERYTHING..." -ForegroundColor Yellow
             Stop-Process -Name 'node' -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
             Remove-Item $CleanPath -Recurse -Force -ErrorAction SilentlyContinue
         } 
-        
-        # 2. THE PRUNE: Selective Cleaning (Preserves node_modules & core configs)
         elseif ($Prune) {
-            Write-Host "  $($Global:Icons.Arrow) PruneWebsite is TRUE: Cleaning content only..." -ForegroundColor Cyan
+            Write-Host "  $($Global:Icons.Arrow) Pruning content siblings..." -ForegroundColor Cyan
+            $Protected = @('node_modules', '.docusaurus', 'src', 'static', '.git', 'package.json', 'package-lock.json', 'babel.config.js', 'docusaurus.config.js', 'sidebars.js')
             
-            # List of system folders to PROTECT
-            $Protected = @('node_modules', '.docusaurus', '.git', 'src', 'static', 'package.json', 'package-lock.json')
-            
-            $Items = Get-ChildItem $CleanPath
-            foreach ($Item in $Items) {
-                if ($Protected -notcontains $Item.Name) {
-                    Remove-Item $Item.FullName -Recurse -Force -ErrorAction SilentlyContinue
-                }
-            }
-            Write-Host "  $($Global:Icons.Check) Content folders cleared. Environment preserved." -ForegroundColor Gray
+            Get-ChildItem $CleanPath | Where-Object { $Protected -notcontains $_.Name } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
-    # 3. REBUILD: Only runs if the core engine is missing
-    if (!(Test-Path $PkgPath)) {
+    # Scaffold if missing
+    if (!(Test-Path (Join-Path $CleanPath 'package.json'))) {
         Write-Host "  $($Global:Icons.Warning) Engine missing. Rebuilding Scaffold..." -ForegroundColor Yellow
         $ParentDir = Split-Path $CleanPath -Parent
         $FolderName = Split-Path $CleanPath -Leaf
         
         Push-Location $ParentDir
         try {
-            cmd /c "echo y | npx create-docusaurus@latest $FolderName classic --javascript --skip-install --git-strategy none"
-            Start-Sleep -Seconds 2
+            # Scaffold to a temp name to avoid 'Directory exists' error, then move contents
+            $TempName = "staged_$($FolderName)"
+            cmd /c "echo y | npx create-docusaurus@latest $TempName classic --javascript --skip-install"
+            
+            if (!(Test-Path $CleanPath)) { New-Item $CleanPath -ItemType Directory -Force | Out-Null }
+            Move-Item "$TempName\*" $CleanPath -Force
+            Remove-Item $TempName -Recurse -Force
         } finally {
             Pop-Location
         }
-        # Scrub default Docusaurus demo content
-        Remove-SentinelBoilerplate -SitePath $CleanPath
+    }
+
+    # Ensure Sibling Folders exist under SitePath
+    foreach ($Loc in $Locations) {
+        if ($Loc.Role -ne 'Website') { continue }
+        $SubPath = Join-Path $CleanPath $Loc.WebSubFolder
+        if (!(Test-Path $SubPath)) { 
+            New-Item $SubPath -ItemType Directory -Force | Out-Null 
+        }
     }
 }
 
@@ -746,23 +722,19 @@ function Global:Write-SentinelDocusaurusConfig {
     )
 
     $ConfigPath = Join-Path $SitePath 'docusaurus.config.js'
+    $SafeUrl = if ($YamlData.Settings.SiteUrl) { $YamlData.Settings.SiteUrl } else { 'http://localhost:3000' }
     
-    # Ensure URL is never null/empty to prevent Docusaurus boot error
-    $SafeUrl = [string]$YamlData.Settings.'SiteUrl'
-    if ([string]::IsNullOrWhiteSpace($SafeUrl)) { $SafeUrl = 'http://localhost:3000' }
-    
-    # Filter for all Website locations
+    # Get all Website Locations
     $WebLocs = $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }
     
-    # Root (docs) vs Plugins (siblings)
-    $Primary = $WebLocs | Where-Object { $_.RootType -eq 'web-root' }
+    # Identify Sibling Plugins (Anything NOT web-root)
     $Plugins = $WebLocs | Where-Object { $_.RootType -ne 'web-root' }
 
-    # Build Plugin Strings
     $PluginBlocks = ""
     foreach ($P in $Plugins) {
         $Folder = $P.WebSubFolder
         $ID = $Folder.Replace("-", "").ToLower()
+        # Per instruction: all other locations belong as siblings to the docs folder
         $Sidebar = "./sidebar-$Folder.js"
         
         $PluginBlocks += @"
@@ -778,7 +750,6 @@ function Global:Write-SentinelDocusaurusConfig {
 "@
     }
 
-    # Build Nav Links
     $NavLinks = ""
     foreach ($loc in $WebLocs) {
         $Label = (Get-Culture).TextInfo.ToTitleCase($loc.WebSubFolder.Replace("-", " "))
@@ -789,12 +760,9 @@ function Global:Write-SentinelDocusaurusConfig {
     $ConfigBody = @"
 const config = {
   'title': 'Sentinel Source Studio',
-  'tagline': 'Unified Media Framework',
   'url': '$SafeUrl',
   'baseUrl': '/',
   'onBrokenLinks': 'warn',
-  'onBrokenMarkdownLinks': 'warn',
-
   'presets': [
     [
       'classic',
@@ -803,23 +771,18 @@ const config = {
           'path': 'docs',
           'sidebarPath': require.resolve('./sidebars.js'),
         },
-        'theme': {
-          'customCss': require.resolve('./src/css/custom.css'),
-        },
+        'theme': { 'customCss': require.resolve('./src/css/custom.css') },
       },
     ],
   ],
-
   'plugins': [
 $PluginBlocks
   ],
-
   'themeConfig': {
     'navbar': {
       'title': 'Sentinel',
       'items': [
 $NavLinks
-        {to: 'blog', label: 'Updates', position: 'right'},
       ],
     },
   },
@@ -829,9 +792,8 @@ module.exports = config;
 "@
 
     $ConfigBody | Out-File -FilePath $ConfigPath -Encoding utf8 -Force
-    Write-Host "  $($Global:Icons.Check) Dynamic docusaurus.config.js updated ($($Plugins.Count) plugins added)." -ForegroundColor Gray
+    Write-Host "  $($Global:Icons.Check) Dynamic config updated: $($Plugins.Count) plugins registered." -ForegroundColor Gray
 }
-
 function Global:Start-SentinelProduction {
     param($SitePath)
     Write-Host "`nPHASE 4: Finalizing & Handing off to Node..." -ForegroundColor Cyan
