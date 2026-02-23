@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../website"
+		},
+		{
+			"path": "../../Photography_Hobby/jems-tones"
+		},
+		{
+			"path": "../../millermade-handcrafted"
+		},
+		{
+			"path": "../../Recipes"
+		},
+		{
+			"path": "../../../../Source_Studio"
+		}
+	],
+	"settings": {
+		"powershell.cwd": "sentinel-media-sync"
+	}
+}

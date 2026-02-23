@@ -14,25 +14,32 @@ function Global:Get-SentinelWebLocations {
     return $Locations | Where-Object {
         $_.Role -eq 'Website' -and -not [string]::IsNullOrWhiteSpace($_."'SitePath'")
     }
-}function Global:Invoke-SentinelBranding {
+}
+
+function Global:Invoke-SentinelBranding {
     param([string]$SitePath, [string]$TemplateDir)
 
     Write-Host "`n$($Global:Icons.Check) Injecting Branding & Configs..." -ForegroundColor Cyan
 
+    # --- SECTION 0: THE SCRUB ---
+    $Junk = @("static/img/logo.svg", "static/img/favicon.ico", "static/favicon.ico")
+    foreach ($j in $Junk) {
+        $p = Join-Path $SitePath $j
+        if (Test-Path $p) { Remove-Item $p -Force }
+    }
     # 1. Config & Core Overlays (docusaurus.config.js, sidebars.js, nav-registry.json)
     $SrcCfg = Join-Path $TemplateDir 'core-config'
     if (Test-Path $SrcCfg) {
-        # Copy root-level configs (.js, .json, .yml) to site root
         Get-ChildItem $SrcCfg -Include *.js, *.json, *.yml | Where-Object { $_.Name -ne 'custom.css' -and $_.Name -ne 'index.js' } | Copy-Item -Destination $SitePath -Force
 
-        # A. Update Global CSS (src/css/custom.css)
+        # A. Update Global CSS
         $DstCSS = Join-Path $SitePath 'src/css/custom.css'
         if (!(Test-Path (Split-Path $DstCSS))) { New-Item (Split-Path $DstCSS) -ItemType Directory -Force | Out-Null }
         if (Test-Path (Join-Path $SrcCfg 'custom.css')) {
             Copy-Item (Join-Path $SrcCfg 'custom.css') $DstCSS -Force
         }
 
-        # B. Update Homepage Component (src/pages/index.js)
+        # B. Update Homepage Component
         $DstHome = Join-Path $SitePath 'src/pages/index.js'
         if (!(Test-Path (Split-Path $DstHome))) { New-Item (Split-Path $DstHome) -ItemType Directory -Force | Out-Null }
         if (Test-Path (Join-Path $SrcCfg 'index.js')) {
@@ -40,7 +47,7 @@ function Global:Get-SentinelWebLocations {
         }
     }
 
-    # 2. Component Distribution (GalleryView, ProductView, etc.)
+    # 2. Component Distribution
     $SrcComp = Join-Path $TemplateDir 'components'
     $DstComp = Join-Path $SitePath 'src/components'
     if (Test-Path $SrcComp) {
@@ -48,20 +55,23 @@ function Global:Get-SentinelWebLocations {
         Copy-Item (Join-Path $SrcComp '*') $DstComp -Force
     }
 
-    # 3. Branding Assets (Images)
+    # 3. Branding Assets (Images & Icons)
+    # This ensures the-source.ico and your custom logo are the only ones standing
     $SrcImg = Join-Path $TemplateDir 'branding/img'
     $DstImg = Join-Path $SitePath 'static/img'
     if (Test-Path $SrcImg) {
         if (!(Test-Path $DstImg)) { New-Item $DstImg -ItemType Directory -Force | Out-Null }
-        robocopy "$SrcImg" "$DstImg" /E /R:0 /W:0 /NJH /NJS /NDL /NFL
+        # robocopy /MIR would wipe the folder, but we use /E to merge and overwrite
+        robocopy "$SrcImg" "$DstImg" /E /R:0 /W:0 /NJH /NJS /NDL /NFL /NC /NS | Out-Null
     }
 
-    # 4. Content Seed Population (Static Copy for now)
+    # 4. Content Seed Population
     $SrcSeeds = Join-Path $TemplateDir 'content-seeds'
     if (Test-Path $SrcSeeds) {
-        Write-Host "  $($Global:Icons.Info) Populating content seeds..." -ForegroundColor Gray
+        Write-Host "  $($Global:Icons.Check) Populating content seeds..." -ForegroundColor Gray
         
-        Get-ChildItem (Join-Path $SrcSeeds 'docs') -Filter "index - *.md" | ForEach-Object {
+        # This part handles the specific intro/index file mapping
+        Get-ChildItem (Join-Path $SrcSeeds 'docs') -Filter "index - *.md" -ErrorAction SilentlyContinue | ForEach-Object {
             $InstanceID = ($_.BaseName -replace 'index - ', '').Trim()
             $TargetDir = Join-Path $SitePath $InstanceID
             
@@ -207,16 +217,18 @@ function Global:New-WebPageFromTemplate {
 }
 
 function Global:Write-SentinelOdometer {
-    param($Tag, $Source, $Path, $Current, $Total, $Time)
-    $Percent = [Math]::Round(($Current / $Total) * 100)
-    # Formats as: → [GEN] [Culinary] [12/50] (24%) [00:15] filename.mdx
-    $Prefix = "  $($Global:Icons.Arrow) [$Tag] [$Source] [$Current/$Total] ($Percent%) [$Time] "
-
-    # Trim path if it exceeds terminal width to keep odometer on one line
-    $MaxPathLen = 120 - $Prefix.Length
-    $DisplayPath = if ($Path.Length -gt $MaxPathLen) { "..." + $Path.Substring($Path.Length - ($MaxPathLen - 3)) } else { $Path }
-
-    Write-Host "`r$Prefix$DisplayPath" -NoNewline
+    param($Tag, $Source, $Path, $Current, $Total, $Time = "")
+    
+    $Percent = [math]::Round(($Current / $Total) * 100)
+    $Progress = "[$Current/$Total] ($Percent%)"
+    
+    $Msg = "  $($Global:Icons.Arrow) [{0,-4}] {1,-25} {2,-18} [{3}] {4}" -f $Tag, $Source, $Progress, $Time, $Path
+    
+    # Get console width and pad right to overwrite old characters
+    $Width = $Host.UI.RawUI.WindowSize.Width - 1
+    if ($Msg.Length -gt $Width) { $Msg = $Msg.Substring(0, $Width) }
+    
+    Write-Host ("`r" + $Msg.PadRight($Width)) -NoNewline
 }
 
 function Global:Clear-SentinelOdometer {
@@ -256,11 +268,13 @@ function Global:Write-SentinelRecipeIndex {
 }
 
 function Global:Sync-SentinelWebContent {
-    param($Locations, $FileTypes)
+    param($Locations, $Settings)
 
-    # 1. Build the Master Extension List
-    $AllowedExtensions = @() # Use a standard array instead of a Generic List
-
+    $TargetWebsitePath = $Settings.SitePath.Replace("'", "")
+    $FileTypes = $Settings.FileTypes
+    
+    # Build Allowed Extensions List
+    $AllowedExtensions = @()
     foreach ($Category in $FileTypes.WebContent) {
         if ($FileTypes.ContainsKey($Category)) {
             $FileTypes.$Category | ForEach-Object { $AllowedExtensions += "*$_" }
@@ -273,16 +287,17 @@ function Global:Sync-SentinelWebContent {
         if ($loc.Role -ne 'Website') { continue }
 
         $Source = $loc.Path.Replace("'", "")
-        $TargetDir = $loc.SitePath.Replace("'", "")
         $SubFolder = $loc.WebSubFolder.Replace("'", "")
-        $Destination = Join-Path $TargetDir $SubFolder
+        
+        # Mapping: 'docs' goes to site/docs, others become siblings in site/SubFolder
+        $Destination = Join-Path $TargetWebsitePath $SubFolder
 
         if (Test-Path $Source) {
-            Write-Host "  $($Global:Icons.Arrow) Syncing $SubFolder (Filtered)..." -ForegroundColor Gray
+            Write-Host "  $($Global:Icons.Arrow) Mirroring $SubFolder..." -ForegroundColor Gray
+
+            if (!(Test-Path $Destination)) { New-Item $Destination -ItemType Directory -Force | Out-Null }
 
             $ExcludeDirs = if ($FileTypes.Exclusions) { $FileTypes.Exclusions } else { @() }
-
-            # Use a simple array for ArgumentList
             $RoboArgs = @($Source, $Destination) + $AllowedExtensions + @("/MIR", "/R:0", "/W:0", "/NDL", "/NFL", "/NJH", "/NJS")
 
             if ($ExcludeDirs.Count -gt 0) {
@@ -290,64 +305,49 @@ function Global:Sync-SentinelWebContent {
                 $RoboArgs += $ExcludeDirs
             }
 
-            # Run robocopy directly or with correctly formatted arguments
             & robocopy @RoboArgs
+            
+            # Post-Processing: Generate MDX files for grouped assets (Recipes/Gallery)
+            if ($loc.RootType -ne 'web-root') {
+                Invoke-SentinelWebPipeline -loc $loc -Settings $Settings -TargetWebsitePath $TargetWebsitePath
+            }
         }
     }
 }
 
-function Global:Write-SentinelPhase0 {
-    param(
-        [Parameter(Mandatory=$true)] $YamlData,
-        [Parameter(Mandatory=$false)] $TargetWebsitePath
-    )
+function Global:Write-SentinelSidebars {
+    param([string]$SitePath, [array]$Locations)
 
-    Write-Host '     STATUS      NAME                ROLE                PATH'
+    $Websites = $Locations | Where-Object { $null -ne $_.WebSubFolder }
     
-    # Extract locations regardless of casing in YAML keys
-    $Locs = if ($YamlData.Locations) { $YamlData.Locations } else { $YamlData.locations }
-
-    foreach ($loc in $Locs) {
-        $IsOnline = Test-Path $loc.Path
+    # Create sidebars for the main 'docs' and each additional content plugin
+    foreach ($loc in $Websites) {
+        $SubFolder = $loc.WebSubFolder.Replace("'", "")
+        $SidebarKey = if ($SubFolder -eq 'docs') { "docs" } else { $SubFolder }
+        $SidebarFileName = "sidebar-$SidebarKey.js"
+        if ($SubFolder -eq 'docs') { $SidebarFileName = "sidebars.js" }
         
-        # Determine Status Priority
-        if (-not $IsOnline) { 
-            $StatusStr = '[OFFLINE ]'; $StatusColor = 'Red' 
-        }
-        elseif ($loc.Role -eq 'Website') { 
-            # This ensures your 4 websites stand out
-            $StatusStr = '[TARGET  ]'; $StatusColor = 'Cyan' 
-        }
-        elseif ($loc.MonitorDepth -ge 0) { 
-            # Preserves functionality for Archives/Pickups
-            $StatusStr = '[ACTIVE  ]'; $StatusColor = 'Green' 
-        }
-        else { 
-            $StatusStr = '[SINK    ]'; $StatusColor = 'DarkGray' 
-        }
+        $Label = (Get-Culture).TextInfo.ToTitleCase($SubFolder.Replace("-", " "))
 
-        $RoleColor = Get-SentinelRoleColor -Role $loc.Role
-        
-        Write-Host '     ' -NoNewline
-        Write-Host $StatusStr.PadRight(12) -ForegroundColor $StatusColor -NoNewline
-        Write-Host " [$($loc.Name.PadRight(16))]" -NoNewline
-        
-        $RoleDisplay = if ([string]::IsNullOrWhiteSpace($loc.Role)) { "N/A" } else { $loc.Role }
-        Write-Host " [$($RoleDisplay.PadRight(18))] " -ForegroundColor $RoleColor -NoNewline
-        Write-Host $loc.Path -ForegroundColor Gray
-    }
-
-    if ($TargetWebsitePath) {
-        Write-Host "`n  $($Global:Icons.Arrow) Target Engine: $TargetWebsitePath" -ForegroundColor Cyan
+        $Content = @"
+module.exports = {
+  '$SidebarKey': [
+    {
+      type: 'category',
+      label: '$Label',
+      link: { type: 'generated-index', title: '$Label Overview' },
+      items: [{type: 'autogenerated', dirName: '.'}],
+    },
+  ],
+};
+"@
+        $Content | Out-File (Join-Path $SitePath $SidebarFileName) -Encoding UTF8 -Force
     }
 }
-
-
 function Global:Format-SentinelNum {
     param([int]$Number)
     return $Number.ToString('#,0')
 }
-
 
 function Global:Get-SentinelRoleColor {
     param([string]$Role)
@@ -446,45 +446,62 @@ function Global:Initialize-SentinelSecrets {
 }
 
 function Global:Initialize-SentinelWebRoot {
-    param([string]$RootPath, [hashtable]$Settings)
+    param(
+        [string]$RootPath, 
+        $Settings
+    )
 
     $CleanPath = $RootPath.Replace("'", "").Trim()
-    $AllowPurge = $Settings.PurgeWebsite
+    $Purge = $Settings.PurgeWebsite
+    $Prune = $Settings.PruneWebsite
+    $PkgPath = Join-Path $CleanPath 'package.json'
 
-    if ((Test-Path $CleanPath) -and $AllowPurge) {
-        Write-Host "  $($Global:Icons.Warning) PurgeWebsite is TRUE: Wiping engine..." -ForegroundColor Yellow
+    # Rule: if Prune is true, Purge is forced to false
+    if ($Prune) { $Purge = $false }
+
+    if (Test-Path $CleanPath) {
+        # 1. THE PURGE: Total Obliteration
+        if ($Purge) {
+            Write-Host "  $($Global:Icons.Warning) PurgeWebsite is TRUE: Wiping EVERYTHING..." -ForegroundColor Yellow
+            Stop-Process -Name 'node' -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            Remove-Item $CleanPath -Recurse -Force -ErrorAction SilentlyContinue
+        } 
         
-        # 1. Kill Node to unlock files
-        Stop-Process -Name 'node' -ErrorAction SilentlyContinue
-        
-        # 2. STEP OUT of the directory to unlock the folder itself
-        if ($PWD.Path -like "$CleanPath*") {
-            Set-Location (Split-Path $CleanPath -Parent)
+        # 2. THE PRUNE: Selective Cleaning (Preserves node_modules & core configs)
+        elseif ($Prune) {
+            Write-Host "  $($Global:Icons.Arrow) PruneWebsite is TRUE: Cleaning content only..." -ForegroundColor Cyan
+            
+            # List of system folders to PROTECT
+            $Protected = @('node_modules', '.docusaurus', '.git', 'src', 'static', 'package.json', 'package-lock.json')
+            
+            $Items = Get-ChildItem $CleanPath
+            foreach ($Item in $Items) {
+                if ($Protected -notcontains $Item.Name) {
+                    Remove-Item $Item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+            Write-Host "  $($Global:Icons.Check) Content folders cleared. Environment preserved." -ForegroundColor Gray
         }
-        
-        Start-Sleep -Seconds 2
-        Remove-Item $CleanPath -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # 3. REBUILD: Only runs if the core engine is missing
     if (!(Test-Path $PkgPath)) {
-        Write-Host "  $($Global:Icons.Warning) Engine missing/purged. Scaffolding..." -ForegroundColor Yellow
-        # 1. Standard Scaffold Sequence
+        Write-Host "  $($Global:Icons.Warning) Engine missing. Rebuilding Scaffold..." -ForegroundColor Yellow
         $ParentDir = Split-Path $CleanPath -Parent
         $FolderName = Split-Path $CleanPath -Leaf
-        if (!(Test-Path $ParentDir)) { New-Item $ParentDir -ItemType Directory -Force | Out-Null }
-
-        Set-Location $ParentDir
-
-        # 2. Run the Zero-Touch Scaffold
-        # Using 'echo y |' handles the prompt to proceed without requiring user input
-        cmd /c "echo y | npx create-docusaurus@latest $FolderName classic --javascript --skip-install --git-strategy none"
-
-        # 3. Wait for the file system to settle, then scrub the mess
-        Start-Sleep -Seconds 5
-        Purge-SentinelBoilerplate -SitePath $CleanPath
+        
+        Push-Location $ParentDir
+        try {
+            cmd /c "echo y | npx create-docusaurus@latest $FolderName classic --javascript --skip-install --git-strategy none"
+            Start-Sleep -Seconds 2
+        } finally {
+            Pop-Location
+        }
+        # Scrub default Docusaurus demo content
+        Remove-SentinelBoilerplate -SitePath $CleanPath
     }
 }
-
 
 function Global:Invoke-SentinelPrune {
     param($Locations, $Settings)
@@ -521,19 +538,23 @@ function Global:Invoke-SentinelPrune {
 function Global:Start-SentinelWebsite {
     param([string]$Path)
     
-    # 1. Clean the path to ensure no trailing/leading quotes exist before we wrap it
-    $CleanPath = $Path.Trim().Replace("'", "")
-    
-    Write-Host "  $($Global:Icons.Check) Launching Node Server (0.0.0.0:3000)..." -ForegroundColor Green
-    
-    # 2. Kill ghost processes to prevent port refusal
-    Stop-Process -Name 'node' -Force -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        Write-Host "  $($Global:Icons.Error) Cannot start: Path is null." -ForegroundColor Red
+        return
+    }
 
-    # 3. Use escaped double quotes for the CMD path to prevent syntax errors
-    # /k keeps the window open so you can see if NPM fails
-    Start-Process cmd -ArgumentList "/k cd /d `"$CleanPath`" && npm start -- --host 0.0.0.0"
+    Set-Location $Path
+    
+    # Check if we need to install dependencies
+    if (!(Test-Path (Join-Path $Path "node_modules"))) {
+        Write-Host "`nPHASE 4: Initializing Node Modules (First Run)..." -ForegroundColor Yellow
+        Write-Host "  This may take a minute for Source Studio..." -ForegroundColor Gray
+        npm install
+    }
+
+    Write-Host "`nPHASE 4: Launching Source Studio Engine..." -ForegroundColor Cyan
+    npm start
 }
-
 
 function Global:Test-SentinelExclusion {
     param([string]$Path)
@@ -717,94 +738,265 @@ $SiteUrl/$SiteName
     }
 }
 
+
 function Global:Write-SentinelDocusaurusConfig {
-    param([string]$SitePath, [array]$Locations)
+    param(
+        [string]$SitePath,
+        $YamlData
+    )
 
-    $NavbarItems = ""
-    $FooterLinks = ""
+    $ConfigPath = Join-Path $SitePath 'docusaurus.config.js'
+    
+    # Ensure URL is never null/empty to prevent Docusaurus boot error
+    $SafeUrl = [string]$YamlData.Settings.'SiteUrl'
+    if ([string]::IsNullOrWhiteSpace($SafeUrl)) { $SafeUrl = 'http://localhost:3000' }
+    
+    # Filter for all Website locations
+    $WebLocs = $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }
+    
+    # Root (docs) vs Plugins (siblings)
+    $Primary = $WebLocs | Where-Object { $_.RootType -eq 'web-root' }
+    $Plugins = $WebLocs | Where-Object { $_.RootType -ne 'web-root' }
 
-    foreach ($loc in $Locations) {
-        if ($null -eq $loc.WebSubFolder) { continue }
-        $Label = (Get-Culture).TextInfo.ToTitleCase($loc.WebSubFolder.Replace('-', ' '))
+    # Build Plugin Strings
+    $PluginBlocks = ""
+    foreach ($P in $Plugins) {
+        $Folder = $P.WebSubFolder
+        $ID = $Folder.Replace("-", "").ToLower()
+        $Sidebar = "./sidebar-$Folder.js"
         
-        # Add to Top Nav
-        $NavbarItems += "        {to: '/$($loc.WebSubFolder)/', label: '$Label', position: 'left'},`n"
-        # Add to Bottom (Footer) Nav
-        $FooterLinks += "            {label: '$Label', to: '/$($loc.WebSubFolder)/'},`n"
+        $PluginBlocks += @"
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        'id': '$ID',
+        'path': '$Folder',
+        'routeBasePath': '$Folder',
+        'sidebarPath': require.resolve('$Sidebar'),
+      },
+    ],
+"@
     }
 
-    $ConfigContent = @"
+    # Build Nav Links
+    $NavLinks = ""
+    foreach ($loc in $WebLocs) {
+        $Label = (Get-Culture).TextInfo.ToTitleCase($loc.WebSubFolder.Replace("-", " "))
+        $Path = if ($loc.RootType -eq 'web-root') { 'docs/intro' } else { "$($loc.WebSubFolder)/" }
+        $NavLinks += "        {to: '$Path', label: '$Label', position: 'left'},`n"
+    }
+
+    $ConfigBody = @"
 const config = {
-  title: 'Sentinel Studio',
-  tagline: 'Automated Media Sync',
-  url: 'http://localhost:3000',
-  baseUrl: '/',
-  themeConfig: {
-    navbar: {
-      title: 'Sentinel',
-      items: [
-$NavbarItems
-      ],
-    },
-    footer: {
-      style: 'dark',
-      links: [
-        {
-          title: 'Websites',
-          items: [
-$FooterLinks
-          ],
+  'title': 'Sentinel Source Studio',
+  'tagline': 'Unified Media Framework',
+  'url': '$SafeUrl',
+  'baseUrl': '/',
+  'onBrokenLinks': 'warn',
+  'onBrokenMarkdownLinks': 'warn',
+
+  'presets': [
+    [
+      'classic',
+      {
+        'docs': {
+          'path': 'docs',
+          'sidebarPath': require.resolve('./sidebars.js'),
         },
+        'theme': {
+          'customCss': require.resolve('./src/css/custom.css'),
+        },
+      },
+    ],
+  ],
+
+  'plugins': [
+$PluginBlocks
+  ],
+
+  'themeConfig': {
+    'navbar': {
+      'title': 'Sentinel',
+      'items': [
+$NavLinks
+        {to: 'blog', label: 'Updates', position: 'right'},
       ],
-      copyright: `Sentinel Sync © ${new Date().getFullYear()}`,
     },
   },
-  presets: [
-    ['classic', { docs: { sidebarPath: require.resolve('./sidebars.js') }, theme: { customCss: require.resolve('./src/css/custom.css') } }],
-  ],
 };
+
 module.exports = config;
 "@
 
-    $ConfigContent | Out-File (Join-Path $SitePath 'docusaurus.config.js') -Encoding UTF8 -Force
+    $ConfigBody | Out-File -FilePath $ConfigPath -Encoding utf8 -Force
+    Write-Host "  $($Global:Icons.Check) Dynamic docusaurus.config.js updated ($($Plugins.Count) plugins added)." -ForegroundColor Gray
 }
-function Global:Write-SentinelSidebars {
-    param([string]$SitePath, [array]$Locations)
 
-    $Websites = $Locations | Where-Object { $null -ne $_.WebSubFolder }
+function Global:Start-SentinelProduction {
+    param($SitePath)
+    Write-Host "`nPHASE 4: Finalizing & Handing off to Node..." -ForegroundColor Cyan
+    Stop-Process -Name "node" -ErrorAction SilentlyContinue
+    Set-Location $SitePath
+    npm start
+}
+
+function Global:Get-SentinelRevision {
+    param([string]$ScriptPath)
+    $VersionFile = Join-Path $ScriptPath ".sentinel_version"
+    $BaseVersion = "20" # Your current major version
     
-    foreach ($loc in $Websites) {
-        $ID = $loc.WebSubFolder.Replace("-", "")
-        $SidebarFileName = if ($loc.WebSubFolder -eq 'docs') { "sidebars.js" } else { "sidebars" + ($ID.Substring(0,1).ToUpper() + $ID.Substring(1)) + ".js" }
-        $Label = (Get-Culture).TextInfo.ToTitleCase($loc.WebSubFolder.Replace("-", " "))
+    if (Test-Path $VersionFile) {
+        $Rev = [int](Get-Content $VersionFile) + 1
+    } else {
+        $Rev = 1
+    }
+    
+    $Rev | Out-File $VersionFile -Encoding utf8
+    return "v$BaseVersion.$Rev"
+}
 
-        # Build the Global Network Navigation links for the sidebar
-        $GlobalLinks = ""
-        foreach ($other in $Websites) {
-            $OtherLabel = (Get-Culture).TextInfo.ToTitleCase($other.WebSubFolder.Replace("-", " "))
-            $GlobalLinks += "        {type: 'link', label: '$OtherLabel', href: '/$($other.WebSubFolder)/'},`n"
+function Global:Write-SentinelPhase0 {
+    param($YamlData)
+    $Locs = if ($YamlData.Locations) { $YamlData.Locations } else { $YamlData.locations }
+    
+    $MaxName = ($Locs.Name | Measure-Object -Property Length -Maximum).Maximum + 2
+    $MaxRole = ($Locs.Role | Measure-Object -Property Length -Maximum).Maximum + 2
+    if ($MaxName -lt 15) { $MaxName = 15 }
+
+    # FIX: Define the string first, then write it with the color
+    $HeaderText = "     {0,-10} {1,-$MaxName} {2,-$MaxRole} {3}" -f "STATUS", "NAME", "ROLE", "PATH"
+    Write-Host $HeaderText -ForegroundColor Gray
+
+    foreach ($loc in $Locs) {
+        $Status = "ACTIVE"; $Color = "White"
+        switch -Regex ($loc.Role) {
+            "Website"         { $Status = "TARGET"; $Color = "Yellow" }
+            "Pickup"          { $Color = "Green" }
+            "Archive"         { $Color = "Gray" }
+            "InPlace_Archive" { $Color = "Magenta" }
+            "timeline"        { $Color = "Cyan" }
         }
+        if (!(Test-Path $loc.Path)) { $Status = "OFFLINE"; $Color = "Red" }
+        
+        $RowText = "     [{0,-8}] [{1,-$MaxName}] [{2,-$MaxRole}] {3}" -f $Status, $loc.Name, $loc.Role, $loc.Path
+        Write-Host $RowText -ForegroundColor $Color
+    }
+}
 
-        $Content = @"
-module.exports = {
-  $($ID)Sidebar: [
-    {
-      type: 'category',
-      label: '$Label',
-      link: { type: 'generated-index', title: '$Label Gallery', slug: '/index' },
-      items: [{type: 'autogenerated', dirName: '.'}],
-    },
-    {
-      type: 'category',
-      label: 'Network Navigation',
-      collapsed: false,
-      items: [
-$GlobalLinks
-      ],
-    },
-  ],
-};
-"@
-        $Content | Out-File (Join-Path $SitePath $SidebarFileName) -Encoding UTF8 -Force
+function Global:Invoke-SentinelWebPipeline {
+    param($loc, $Settings, $TargetWebsitePath)
+    
+    if ($null -eq $loc.Template) { return }
+    $TemplateRaw = $loc.Template.ToString().Replace("'", "")
+    
+    # Simple regex to extract [Category] and TemplateName
+    if ($TemplateRaw -match '^\[([^\]]+)\](.+)$') {
+        $Category = $Matches[1].ToLower().Trim()
+        $TName = $Matches[2].TrimStart('\').Replace(".md", "")
+        # Single quotes for key path as requested
+        $RelPath = 'content-seeds\' + $Category + '\' + $TName + '.md'
+    } else {
+        $RelPath = $TemplateRaw.TrimStart('\')
+    }
+
+    $FullTemplatePath = Join-Path $Settings.TemplateDir $RelPath
+    # Clean up subfolder pathing
+    $CleanSub = $loc.WebSubFolder.ToString().Replace("'", "").Trim()
+    $TargetDir = Join-Path $TargetWebsitePath $CleanSub
+
+    if (Test-Path $FullTemplatePath -PathType Leaf) {
+        Invoke-SentinelRecipeContent -SourceDataDir $loc.Path -TargetDir $TargetDir -TemplatePath $FullTemplatePath
+    }
+}
+
+function Global:Sync-SentinelMedia {
+    param($Locations, $Settings)
+    Write-Host "PHASE 1: Organizing Media Assets..." -ForegroundColor Cyan
+    
+    $PickupLocs = $Locations | Where-Object { $_.Role -eq 'Pickup' }
+    $Stats = @{ Scanned = 0; Moved = 0; Errors = 0 }
+
+    foreach ($loc in $PickupLocs) {
+        if (!(Test-Path $loc.Path)) { continue }
+        
+        $Files = Get-ChildItem -Path $loc.Path -File -Recurse -ErrorAction SilentlyContinue
+        $count = 0
+
+        foreach ($file in $Files) {
+            $count++; $Stats.Scanned++
+            $CleanName = "$($file.BaseName)$($file.Extension.ToLower())"
+            $DestDir = Join-Path "C:\Source\GEEK\Photo_Archive\Sorting_Limbo" $loc.Name
+            
+            if (!(Test-Path $DestDir)) { New-Item $DestDir -ItemType Directory -Force | Out-Null }
+            $FullDest = Join-Path $DestDir $CleanName
+
+            try {
+                Write-SentinelOdometer -Tag 'MOVE' -Source $loc.Name -Path $CleanName -Current $count -Total $Files.Count
+                Move-Item -Path $file.FullName -Destination $FullDest -Force -ErrorAction Stop
+                $Stats.Moved++
+            } catch { $Stats.Errors++ }
+        }
+        
+        # TARGETED PURGE: Wrapped in Try/Catch to handle "Access Denied" (WhatsApp/Android)
+        Get-ChildItem $loc.Path -Recurse -Directory -ErrorAction SilentlyContinue | 
+            Sort-Object { $_.FullName.Length } -Descending | ForEach-Object {
+                try {
+                    if ((Get-ChildItem $_.FullName -Recurse -ErrorAction Stop).Count -eq 0) {
+                        Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
+                    }
+                } catch {
+                    # Skip folders we don't have permission to touch
+                }
+            }
+        Write-Host ""
+    }
+    return $Stats
+}
+
+function Global:Install-SentinelFramework {
+    param(
+        [string]$TargetDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TargetDir) -or $TargetDir -eq 'False') {
+        Write-Host "  $($Global:Icons.Error) SitePath invalid in config!" -ForegroundColor Red
+        return
+    }
+
+    $PackagePath = Join-Path $TargetDir 'package.json'
+    
+    if (!(Test-Path $PackagePath)) {
+        Write-Host "`n$($Global:Icons.Arrow) Engine Missing. Executing Automated JS Scaffold..." -ForegroundColor Yellow
+        
+        # 1. Setup Staging
+        $Parent = Split-Path $TargetDir
+        $TempPath = Join-Path $Parent "sentinel_scaffold_tmp"
+        if (Test-Path $TempPath) { Remove-Item $TempPath -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $TempPath -Force | Out-Null
+
+        Push-Location $TempPath
+        try {
+            # 2. THE COMMAND: Using --javascript explicitly to bypass the prompt
+            # Scaffolding into 'staged_engine' inside the temp folder
+            npx --yes create-docusaurus@latest staged_engine classic --skip-install --javascript
+            
+            # 3. TELEPORT: Move contents to the real TargetDir
+            if (!(Test-Path $TargetDir)) { New-Item $TargetDir -ItemType Directory -Force | Out-Null }
+            Write-Host "  $($Global:Icons.Arrow) Deploying JS Engine to: $TargetDir" -ForegroundColor Gray
+            Copy-Item -Path "staged_engine\*" -Destination $TargetDir -Recurse -Force
+        } finally {
+            Pop-Location
+            Remove-Item $TempPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 4. THE PURGE
+    Write-Host "  $($Global:Icons.Check) Purging Docusaurus boilerplate..." -ForegroundColor Gray
+    $Guts = @('docs', 'blog', 'static/img')
+    foreach ($folder in $Guts) {
+        $path = Join-Path $TargetDir $folder
+        if (Test-Path $path) { 
+            Remove-Item "$path\*" -Recurse -Force -ErrorAction SilentlyContinue 
+        }
     }
 }

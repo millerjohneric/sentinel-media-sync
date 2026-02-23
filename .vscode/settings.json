@@ -1,0 +1,15 @@
+{
+    "typescript.validate.enable": false,
+    "javascript.validate.enable": false,
+    "files.watcherExclude": {
+        "**/.docusaurus/**": true,
+        "**/node_modules/**": true,
+        "**/build/**": true,
+        "**/Sorting_Limbo/**": true
+    },
+    "files.exclude": {
+        "**/.docusaurus": true,
+        "**/node_modules": true,
+        "**/build": true
+    },
+}

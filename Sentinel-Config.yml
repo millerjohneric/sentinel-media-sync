@@ -14,7 +14,6 @@
 
 'Settings':
   'LogPath': '_log'
-  'TemplateDir': 'S:\GEEK\Sentinel\sentinel-media-sync\templates'
   'MonitorDepth': 3
   'SitePath': 'C:\Source_Studio\website'
   'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
