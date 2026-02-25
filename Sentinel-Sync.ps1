@@ -1,102 +1,90 @@
 # ==============================================================================
 # Sentinel Sync v20.9 [STABLE]
 # ==============================================================================
-
 # --- BOOTSTRAP ---
 . (Join-Path $PSScriptRoot "Sentinel-Core.ps1")
 $ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
-$YamlData = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+# Force Global scope to resolve "Variable not defined" errors in Core functions
+$Global:YamlData = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 $globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-# PATH MAPPING
-$Settings = $YamlData.Settings
-$TargetWebsitePath = $Settings.SitePath
-$SourceFramework = 'C:\Source\GEEK\Sentinel\website'
-$TemplateDir = $Settings.TemplateDir
+# --- PATH MAPPING ---
+$Engine = $Global:YamlData.Locations | Where-Object { $_.RootType -eq 'web-root' }
+$TargetWebsitePath = $Engine.SitePath
+$BuildPath = $Engine.Path
+$Settings = $Global:YamlData.Settings
 
-# REVISION TRACKER
+# --- REVISION TRACKER ---
 $CurrentRevision = Get-SentinelRevision -ScriptPath $PSScriptRoot
 $ToolHeader = "Sentinel Unified Sync & Gen $CurrentRevision"
 
-# --- PHASE 0 & 1 ---
 Clear-Host
 Write-Host "==============================================================================" -ForegroundColor Gray
 Write-Host "# $ToolHeader" -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Gray
-# Phase 0 calculates column widths at runtime based on your YAML
-Write-SentinelPhase0 -YamlData $YamlData
-# Phase 1 physically moves files and returns stats for the Mission Report
-$MediaStats = Sync-SentinelMedia -Locations $YamlData.Locations -Settings $Settings
-Write-Host ""
 
-# --- PHASE 2 ---
+# --- PHASE 0: INITIALIZATION ---
+Write-SentinelPhase0 -YamlData $Global:YamlData
+
+Initialize-SentinelSecrets
+Initialize-SentinelTemplates -TemplateDir $Engine.TemplateDir
+Initialize-SentinelWebRoot -BuildPath $BuildPath -DeployPath $TargetWebsitePath -EngineLoc $Engine
+Write-SentinelHomepageRedirect -SitePath $TargetWebsitePath
+
+# INVISIBLE SILENT INTERRUPT WINDOW (5 Seconds)
+$Timer = [System.Diagnostics.Stopwatch]::StartNew()
+while ($Timer.Elapsed.TotalSeconds -lt 5) {
+    if ([System.Console]::KeyAvailable) { 
+        $null = [System.Console]::ReadKey($true) 
+        break 
+    }
+    Start-Sleep -Milliseconds 100 
+}
+$Timer.Stop()
+
+# --- PHASE 1: MIRRORING ---
+Write-Host "`nPHASE 1: Mirroring Content (Silent Interrupt Active)..." -ForegroundColor Cyan
+$MediaStats = Sync-SentinelMedia -Locations $Global:YamlData.Locations -Settings $Settings
+if ($null -eq $MediaStats) {
+    $MediaStats = @{ 'Scanned' = 0; 'Moved' = 0; 'Errors' = 1 }
+}
+
+# --- PHASE 2: GENERATION ---
 Write-Host "`nPHASE 2: Generating Website Content..." -ForegroundColor Cyan
-$WebLocs = $YamlData.Locations | Where-Object { $null -ne $_.WebSubFolder }
-$current = 0
+$WebLocs = $YamlData.Locations | Where-Object { $_.Role -eq 'Website' }
 
 foreach ($loc in $WebLocs) {
-    $current++
-    $SubFolder = $loc.WebSubFolder.ToString().Trim().Replace("'", "")
-    Write-SentinelOdometer -Tag 'GEN' -Source $loc.Name -Path $SubFolder -Current $current -Total $WebLocs.Count -Time $globalStopwatch.Elapsed.ToString("mm\:ss")
+    if ($loc.WebSubFolder -eq 'docs') { continue }
+    
+    # This now dynamically finds Sync-SentinelRecipes and passes the C:\... paths
     Invoke-SentinelWebPipeline -loc $loc -Settings $Settings -TargetWebsitePath $TargetWebsitePath
 }
 
-# --- PHASE 3: STUDIO DEPLOYMENT ---
-Write-Host "`nPHASE 3: Mirroring Framework to Source Studio..." -ForegroundColor Cyan
-
-# 1. Resolve Path and Initialize/Purge
-$TargetWebsitePath = [string]$YamlData.Settings.SitePath
-Initialize-SentinelWebRoot -RootPath $TargetWebsitePath -Settings $YamlData.Settings
-
-# 2. Seed Engine (The rest of your existing Phase 3 logic)
-$EngineDocsDir = Join-Path $TargetWebsitePath "docs"
-if (!(Test-Path $EngineDocsDir)) { New-Item $EngineDocsDir -ItemType Directory -Force | Out-Null }
-
-# 3. DYNAMIC SEEDING: Iterate through all 'Website' roles
-Write-Host "  $($Global:Icons.Check) Seeding engine from YAML sources..." -ForegroundColor Gray
-
-# Ensure the engine docs directory is ready
-if (!(Test-Path $EngineDocsDir)) { New-Item $EngineDocsDir -ItemType Directory -Force | Out-Null }
-
-foreach ($loc in $YamlData.Locations) {
-    if ($loc.Role -ne 'Website') { continue }
-    
-    $Source = $loc.Path
-    $SubFolder = $loc.WebSubFolder
-    $Destination = Join-Path $TargetWebsitePath $SubFolder
-    
-    Write-Host "    $($Global:Icons.Arrow) Pulling content: $($loc.Name) -> $SubFolder" -ForegroundColor Gray
-    
-    # Robocopy logic
-    robocopy $Source $Destination /MIR /R:0 /W:0 /NDL /NFL /NJH /NJS
+# --- CRITICAL: SIDEBAR CRASH FIX ---
+# Docusaurus requires an 'index.md' or 'intro.md' to build the sidebar correctly
+$IndexFile = Join-Path $TargetWebsitePath "docs\index.md"
+if (!(Test-Path $IndexFile)) {
+    '@latest' | Out-File -FilePath $IndexFile -Encoding utf8
+    '# Welcome to Source Studio' | Out-File -FilePath $IndexFile -Append -Encoding utf8
 }
+# --- PHASE 3: FINALIZATION ---
+Write-Host "`nPHASE 3: Finalizing Studio Framework..." -ForegroundColor Cyan
 
-# 4. Inject Branding & Configs
+# Remove Docusaurus templates, update config, and build sidebars
 Invoke-SentinelBranding -SitePath $TargetWebsitePath -TemplateDir $TemplateDir
-Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -Locations $YamlData.Locations
-Write-SentinelSidebars -SitePath $TargetWebsitePath -Locations $YamlData.Locations
-
+Write-SentinelDocusaurusConfig -SitePath $TargetWebsitePath -YamlData $YamlData
+Write-SentinelSidebars -SitePath $TargetWebsitePath
+Write-SentinelXmlTree -SitePath $TargetWebsitePath
 # --- PHASE 4: ENGINE LAUNCH ---
-Write-Host "`nPHASE 4: Launching Source Studio Engine..." -ForegroundColor Cyan
-
-Push-Location $TargetWebsitePath
-try {
-    # Only run install if node_modules is missing
-    if (!(Test-Path "node_modules")) {
-        Write-Host "  $($Global:Icons.Info) Initializing Node Modules..." -ForegroundColor Gray
-        npm install
-    }
-    npm start
-} finally {
-    Pop-Location
-}
+# Launches in a separate window listening on all ports for ASUS DDNS
+Start-SentinelProduction -SitePath $TargetWebsitePath
 
 # --- PHASE 5: MISSION REPORT ---
 $globalStopwatch.Stop()
 $Duration = $globalStopwatch.Elapsed.ToString('mm\:ss')
 
-# Standard PowerShell if/else to avoid the ternary operator error
-if ($MediaStats.Errors -gt 0) { $ErrorColor = "Red" } else { $ErrorColor = "Gray" }
+if ($MediaStats.Errors -gt 0) { $ErrorColor = 'Red' } else { $ErrorColor = 'Gray' }
 
 Write-Host "`n==============================================================================" -ForegroundColor Gray
 Write-Host " MISSION COMPLETE: $ToolHeader" -ForegroundColor Green
@@ -105,9 +93,16 @@ Write-Host "  $($Global:Icons.Check) Files Scanned: $($MediaStats.Scanned)" -For
 Write-Host "  $($Global:Icons.Arrow) Files Moved:   $($MediaStats.Moved)"   -ForegroundColor Cyan
 Write-Host "  $($Global:Icons.Error) Errors:        $($MediaStats.Errors)"  -ForegroundColor $ErrorColor
 Write-Host "  $($Global:Icons.Check) Total Time:    $Duration"               -ForegroundColor White
+Write-Host "  $($Global:Icons.Check) Remote Access: http://millerjohneric.asuscomm.com:3000" -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Gray
 
-# If you still have the notification function in Core, trigger it here
 if ($YamlData.Settings.EmailSettings.Enabled) {
-    Send-SentinelNotification -Stats $MediaStats -Duration $Duration -JobName 'UnifiedSync'
+    Send-SentinelNotification `
+        -SiteName 'Source Studio' `
+        -Status 'Online' `
+        -TotalGroups ($YamlData.Locations | Measure-Object).Count `
+        -NewPages $MediaStats.Moved `
+        -Preserved ($MediaStats.Scanned - $MediaStats.Moved) `
+        -MirrorTarget $TargetWebsitePath `
+        -SiteUrl 'http://millerjohneric.asuscomm.com:3000'
 }

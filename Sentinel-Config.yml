@@ -1,26 +1,14 @@
 'Project_Status':
-  'Version': '17.7'
+  'Version': '17.8'
   'Codenames':
     'Network': 'Source'
     'Machine': 'GEEK'
     'Volume': 'S:'
   'DriveIcon': 'the-source.ico'
 
-'Root_Layout':
-  'GitHub_Repo': 'S:\GEEK\Sentinel\sentinel-media-sync'
-  'Data_Root': 'C:\Source'
-  'Network_Share': '\\GEEK\Source'
-  'Mapped_Drive': 'S:\'
-
 'Settings':
   'LogPath': '_log'
   'MonitorDepth': 3
-  'SitePath': 'C:\Source_Studio\website'
-  'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
-  'TemplateDir': 'S:\GEEK\Sentinel\sentinel-media-sync\templates'
-  'PurgeWebsite': true
-#  if prunewebsite, purgewebsite is forced to false
-  'PruneWebsite': false
   'DisableJunkPurge': true
   'DryRun': false
   'GlobalOverwrite': true
@@ -32,43 +20,56 @@
   'DateFormat': '%Y/%m Month'
   'ChronoRegex': '^\d{4}/\d{2}\s\w+$'
   'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$'
-  'FileTypes':
-    'Exclusions':
-      - '.webaxs'
-      - 'trashbox'
-      - '.git'
-      - '$RECYCLE.BIN'
-      - '_putaway'
-      - 'System Volume Information'
-    'Images': [ '.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff' ]
-    'RAWs': [ '.nef', '.cr2', '.arw', '.dng' ]
-    'Videos': [ '.mp4', '.mov', '.avi', '.mkv' ]
-    'Audio': [ '.mp3', '.wav', '.flac', '.m4a' ]
-    'Docs': [ '.pdf', '.docx', '.txt' ]
-    'Web': [ '.md', '.html' ]
-    'Sidecars': [ '.xmp', '.json', '.xml', '.yml' ]
-    'Junk':
-      - 'Thumbs.db'
-      - 'desktop.ini'
-      - '.DS_Store'
-      - 'ehthumbs.db'
-    'WebContent':
-      - 'Images'
-      - 'Docs'
-      - 'Sidecars'
-      - 'Web'
-      - '.mp4'
-      - '.yml'
+  'PruneWebsite': true
+
+'Root_Layout':
+  'GitHub_Repo': 'S:\GEEK\Sentinel\sentinel-media-sync'
+  'Data_Root': 'C:\Source'
+  'Network_Share': '\\GEEK\Source'
+  'Mapped_Drive': 'S:\'
+
+
+'FileTypes':
+  'Exclusions':
+    - '.webaxs'
+    - 'trashbox'
+    - '.git'
+    - '$RECYCLE.BIN'
+    - '_putaway'
+    - 'System Volume Information'
+  'Images': [ '.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff' ]
+  'RAWs': [ '.nef', '.cr2', '.arw', '.dng' ]
+  'Videos': [ '.mp4', '.mov', '.avi', '.mkv' ]
+  'Audio': [ '.mp3', '.wav', '.flac', '.m4a' ]
+  'Docs': [ '.pdf', '.docx', '.txt' ]
+  'Web': [ '.md', '.html' ]
+  'Sidecars': [ '.xmp', '.json', '.xml', '.yml' ]
+  'Junk':
+    - 'Thumbs.db'
+    - 'desktop.ini'
+    - '.DS_Store'
+    - 'ehthumbs.db'
+  'WebContent':
+    - 'Images'
+    - 'Docs'
+    - 'Sidecars'
+    - 'Web'
+    - '.mp4'
+    - '.yml'
 
 'Locations':
   - 'Name': 'Source Studio Engine'
     'Role': 'Website'
     'RootType': 'web-root'
-    'WebSubFolder': 'docs'
-    'Path': 'C:\Source\GEEK\Sentinel\website\docs'
-    'GroupSeparator': '-.-'
+    'Path': 'C:\Source\GEEK\Sentinel\website'
+    'SitePath': 'C:\Source_Studio\website'
+    'SiteName': 'Source Studio'
+    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'TemplateDir': 'C:\Source\GEEK\Sentinel\sentinel-media-sync\templates'
+    'PurgeWebsite': true
+    'PruneWebsite': false
     'AutoStart': true
-
+  
   - 'Name': 'Culinary Cuisine'
     'Role': 'Website'
     'RootType': 'web-culinary'
