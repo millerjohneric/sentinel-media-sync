@@ -1,6 +1,9 @@
 ---
-title: {{title}}
-slug: {{slug}}
+'title': '{{title}}'
+'slug': '{{slug}}'
+'layout': 'recipe-grid'
+'images':
+  {{images_list}}
 ---
 
 # {frontMatter.title}

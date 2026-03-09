@@ -72,8 +72,8 @@
   
   - 'Name': 'Culinary Cuisine'
     'Role': 'Website'
-    'RootType': 'web-culinary'
-    'WebSubFolder': 'culinary-cuisine'
+    'RootType': 'web-recipes'
+    'WebSubFolder': 'docs/culinary-cuisine'
     'Path': 'C:\Source\GEEK\Recipes\culinary-cuisine'
     'GroupSeparator': '-.-'
     'Template': '[RECIPES]recipe-card'
@@ -87,7 +87,7 @@
   - 'Name': 'jems-tones'
     'Role': 'Website'
     'RootType': 'web-gallery'
-    'WebSubFolder': 'jems-tones'
+    'WebSubFolder': 'docs/jems-tones'
     'Path': 'C:\Source\GEEK\Photography_Hobby\jems-tones'
     'GroupSeparator': '-.-'
     'Template': '[GALLERY]masonry-grid'
@@ -101,10 +101,10 @@
   - 'Name': 'millermade-handcrafted'
     'Role': 'Website'
     'RootType': 'web-shop'
-    'WebSubFolder': 'millermade-handcrafted'
+    'WebSubFolder': 'docs/millermade-handcrafted'
     'Path': 'C:\Source\GEEK\millermade-handcrafted\website'
     'GroupSeparator': '-.-'
-    'Template': '[SHOP]]hand-crafted'
+    'Template': '[SHOP]hand-crafted'
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
