@@ -35,7 +35,7 @@ function Global:Sync-SentinelRecipes {
     param($Source, $Output, $TemplateDir)
 
     # 1. Load the Recipe Card Template
-    $TemplateFile = Join-Path $TemplateDir "core-config\recipe-card.md"
+    $TemplateFile = Join-Path $TemplateDir "core-config\recipes\recipe-card.md"
     if (!(Test-Path $TemplateFile)) {
         Write-Host "    $($Global:Icons.Error) Recipe Template missing: $TemplateFile" -ForegroundColor Red
         return
@@ -72,26 +72,66 @@ function Global:Sync-SentinelRecipes {
     Write-Host "    $($Global:Icons.Check) Recipe Module: $($RecipeFiles.Count) cards generated." -ForegroundColor Gray
 }
 function Global:Sync-SentinelGallery {
-    param($Source, $Output, $TemplatePath)
-    $TemplateContent = Get-Content -Path $TemplatePath -Raw -ErrorAction SilentlyContinue
-    if (!$TemplateContent) { return }
+    param($Source, $Output, $TemplateDir)
 
-    $MediaFiles = Get-ChildItem -Path $Source -Include "*.jpg","*.png","*.webp" -Recurse
-    foreach ($File in $MediaFiles) {
-        $RelativePath = $File.DirectoryName.Replace($Source, "").TrimStart('\')
-        $TargetSubDir = if ($RelativePath) { Join-Path $Output $RelativePath } else { $Output }
-        if (!(Test-Path $TargetSubDir)) { New-Item $TargetSubDir -ItemType Directory -Force | Out-Null }
+    Write-Host "`n  $($Global:Icons.Arrow) Processing Pipeline: Gallery" -ForegroundColor Cyan
 
-        # Single quotes used for keys as requested
-        $ImgMarkup = "'![](/img/$($File.Directory.Name)/$($File.Name))'"
-        $FinalContent = $TemplateContent.Replace("{{title}}", $File.BaseName).Replace("{{slug}}", $File.BaseName).Replace("{{images_list}}", $ImgMarkup)
-        
-        $TargetPath = Join-Path $TargetSubDir "$($File.BaseName).md"
-        $FinalContent | Out-File -FilePath $TargetPath -Encoding utf8
-        
-        # UPDATED: Show absolute path for transparency
-        Write-Host "    $($Global:Icons.Check) Generated: $TargetPath" -ForegroundColor Gray
+    # 1. Ensure output dir exists
+    if (!(Test-Path $Output)) { New-Item -Path $Output -ItemType Directory -Force | Out-Null }
+
+    # 2. Get all image files from source
+    $ImageFiles = Get-ChildItem -Path $Source -Include "*.jpg","*.jpeg","*.png","*.webp" -Recurse
+
+    if ($ImageFiles.Count -eq 0) {
+        Write-Host "    $($Global:Icons.Warning) No images found in: $Source" -ForegroundColor Yellow
+        return
     }
+
+    # 3. Group by date prefix (YYYYMMDD) — each date = one gallery session page
+    $Sessions = $ImageFiles | Group-Object { 
+        if ($_.BaseName -match '^(\d{8})') { $Matches[1] } else { 'misc' }
+    }
+
+    $PageCount = 0
+    foreach ($Session in $Sessions) {
+        $DateKey  = $Session.Name  # e.g. 20181124
+        $Images   = $Session.Group
+
+        # Format date as readable title: 2018-11-24
+        $Title = if ($DateKey -match '^(\d{4})(\d{2})(\d{2})$') {
+            "$($Matches[1])-$($Matches[2])-$($Matches[3])"
+        } else { $DateKey }
+
+        $Slug = $DateKey
+
+        # Build image markup using require() for local assets in MDX
+        $ImgLines = foreach ($Img in $Images) {
+            "<img src={require('./$($Img.Name)').default} alt='$Title' style={{width:'100%', borderRadius:'6px'}} />"
+        }
+        $ImgBlock = $ImgLines -join "`n`n"
+
+        # Build the MDX page using GalleryView component
+        $Content = @"
+---
+title: '$Title'
+---
+
+import GalleryView from '@site/src/components/GalleryView';
+
+<GalleryView>
+
+$ImgBlock
+
+</GalleryView>
+"@
+
+        $TargetPath = Join-Path $Output "$Slug.mdx"
+        $Content | Out-File -FilePath $TargetPath -Encoding utf8 -Force
+        $PageCount++
+        Write-Host "    $($Global:Icons.Check) Gallery Page: $Title ($($Images.Count) images)" -ForegroundColor Gray
+    }
+
+    Write-Host "    $($Global:Icons.Check) Gallery Module: $PageCount session pages generated." -ForegroundColor Green
 }
 
 # --- ORCHESTRATION ENGINE ---
@@ -141,57 +181,71 @@ function Global:Start-SentinelSync {
     # --- PHASE 1: PREPARING STAGING ENVIRONMENT ---
     Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor Cyan
 
+    
     $WebLoc = $Global:YamlData.Locations | Where-Object { $_.RootType -eq 'web-root' }
     if ($null -ne $WebLoc) {
-        # 1. Purge Prep Path (Staging)
-        if ($WebLoc.PurgeWebsite -and (Test-Path $WebLoc.Path)) {
+        # 1. Purge Prep Path (Staging) — only if engine framework already exists
+        $PackageCheck = Join-Path $WebLoc.Path "package.json"
+        if ($WebLoc.PurgeWebsite -and (Test-Path $WebLoc.Path) -and (Test-Path $PackageCheck)) {
             Write-Host "  $($Global:Icons.Warning) Purging Prep Path: $($WebLoc.Path)" -ForegroundColor Yellow
             Get-ChildItem -Path $WebLoc.Path -Exclude "node_modules" | Remove-Item -Recurse -Force
         }
-
+    
+        # PHASE 1: Preparing Staging Environment...
+        Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor White
+    
         # 2. SELF-HEALING: Re-scaffold if package.json is missing
-        if (!(Test-Path (Join-Path $WebLoc.SitePath "package.json"))) {
+        $PackagePath = Join-Path $WebLoc.Path "package.json"
+        if (!(Test-Path $PackagePath)) {
             Write-Host "  $($Global:Icons.Error) Engine framework missing. Re-scaffolding..." -ForegroundColor Yellow
             
-            # npx fails if the dir exists. We must remove it to allow a clean scaffold.
-            if (Test-Path $WebLoc.SitePath) { 
-                Remove-Item $WebLoc.SitePath -Recurse -Force 
-            }
+            if (Test-Path $WebLoc.Path) { Remove-Item $WebLoc.Path -Recurse -Force | Out-Null }
             
-            # Run scaffold (using --yes to skip prompts)
-            $ParentDir = Split-Path $WebLoc.SitePath
+            $ParentDir = Split-Path $WebLoc.Path
+            $FolderName = Split-Path $WebLoc.Path -Leaf
             Push-Location $ParentDir
-            npx --yes create-docusaurus@latest website classic --javascript --skip-install
+            # Scaffolds directly into the folder name defined in your YAML
+            npx --yes create-docusaurus@latest $FolderName classic --javascript --skip-install
             Pop-Location
 
-            # v21.119 CLEANUP: Remove Docusaurus Boilerplate immediately
-            $Boilerplate = @("docs/intro.md", "docs/tutorial-basics", "docs/tutorial-extras", "blog")
-            foreach ($Item in $Boilerplate) {
-                $PathToRemove = Join-Path $WebLoc.SitePath $Item
-                if (Test-Path $PathToRemove) { 
-                    Remove-Item $PathToRemove -Recurse -Force 
-                    Write-Host "    - Cleaned boilerplate: $Item" -ForegroundColor DarkGray
-                }
-            }
-
-            # v21.119 BRANDING: Apply your custom configs, CSS, and logo
-            if (Test-Path $WebLoc.TemplateDir) {
-                Invoke-SentinelBranding -SitePath $WebLoc.SitePath -TemplateDir $WebLoc.TemplateDir
-                Write-SentinelDocusaurusConfig -SitePath $WebLoc.SitePath -YamlData $Global:YamlData
-            }
-            
-            if (Test-Path (Join-Path $WebLoc.SitePath "package.json")) {
-                Write-Host "    $($Global:Icons.Check) Fresh Engine Scaffolding & Branding Complete." -ForegroundColor Green
-            } else {
-                Write-Host "    $($Global:Icons.Error) Scaffold FAILED. Check network/permissions." -ForegroundColor Red
+            # Verify scaffold succeeded before continuing
+            if (!(Test-Path $PackagePath)) {
+                Write-Host "  $($Global:Icons.Error) CRITICAL: Scaffold failed. package.json not found at $PackagePath" -ForegroundColor Red
+                Write-Host "  Run manually: npx create-docusaurus@latest '$FolderName' classic --javascript --skip-install" -ForegroundColor Yellow
+                return
             }
         }
 
-        # 3. Mirror Engine to Prep
-        Write-Host "  $($Global:Icons.Check) Syncing Engine to Prep..." -ForegroundColor Cyan
-        # We add /MT:8 for speed and /R:3 /W:5 for retry resilience
-        robocopy $WebLoc.SitePath $WebLoc.Path /S /E /MT:8 /R:3 /W:5 /XD docs node_modules .git /NFL /NDL /NJH /NJS /nc /ns /np
+        # 3. TEMPLATE STAGING: Ensures .md templates exist for Phase 2
+        $StagingCoreConfig = Join-Path $WebLoc.Path "core-config"
+        if (!(Test-Path $StagingCoreConfig)) { New-Item $StagingCoreConfig -ItemType Directory -Force | Out-Null }
+        
+        Write-Host "  $($Global:Icons.Check) Staging Templates from Seeds..." -ForegroundColor Cyan
+        robocopy (Join-Path $WebLoc.TemplateDir "content-seeds") $StagingCoreConfig /S /E /NFL /NDL /NJH /NJS /nc /ns /np
+
+        # 4. BOILERPLATE CLEANUP: Remove Docusaurus defaults
+        $Boilerplate = @("docs/intro.md", "docs/intro.mdx", "docs/tutorial-basics", "docs/tutorial-extras", "blog")
+        foreach ($Item in $Boilerplate) {
+            $PathToRemove = Join-Path $WebLoc.Path $Item
+            if (Test-Path $PathToRemove) { 
+                Remove-Item $PathToRemove -Recurse -Force 
+                Write-Host "    - Cleaned boilerplate: $Item" -ForegroundColor DarkGray
+            }
+        }
+
+        # 5. BRANDING: Apply custom configs, CSS, and logo
+        if (Test-Path $WebLoc.TemplateDir) {
+            Invoke-SentinelBranding -SitePath $WebLoc.Path -TemplateDir $WebLoc.TemplateDir
+            Write-SentinelDocusaurusConfig -SitePath $WebLoc.Path -YamlData $Global:YamlData
+        }
+        
+        if (Test-Path (Join-Path $WebLoc.Path "package.json")) {
+            Write-Host "    $($Global:Icons.Check) Fresh Engine Scaffolding & Branding Complete." -ForegroundColor Green
+        } else {
+            Write-Host "    $($Global:Icons.Error) Scaffold FAILED. Check network/permissions." -ForegroundColor Red
+        }
     }
+
 
     # Now run the media sync to populate /docs/ in the Prep folder
     $MediaStats = Sync-SentinelMedia -Locations $Global:YamlData.Locations -TargetWebsitePath $WebLoc.Path -Settings $Settings
@@ -901,8 +955,12 @@ const config = {
   url: 'http://millerjohneric.asuscomm.com',
   baseUrl: '/',
   onBrokenLinks: 'warn',
-  onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
 
   presets: [
     [
@@ -1011,8 +1069,7 @@ function Global:Invoke-SentinelWebPipeline {
             Sync-SentinelRecipes -Source $loc.Path -Output $OutputPath -TemplateDir $TemplateDir 
         }
         "GALLERY" {
-            # Placeholder for jems-tones/photography logic
-            Write-Host "    $($Global:Icons.Check) Gallery Pipeline triggered for $TemplateName" -ForegroundColor Gray
+            Sync-SentinelGallery -Source $loc.Path -Output $OutputPath -TemplateDir $TemplateDir
         }
         Default {
             Write-Host "    $($Global:Icons.Warning) Unknown Template Type: $TemplateType" -ForegroundColor Yellow
@@ -1044,14 +1101,8 @@ function Global:Write-SentinelSidebars {
         $SidebarLines += "      type: 'category',"
         $SidebarLines += "      label: '$Label',"
         $SidebarLines += "      items: ["
-        
-        # Check if an index.md exists in this module
-        if (Test-Path (Join-Path $M.FullName "index.md")) {
-            # Use the full relative path as the ID (e.g., 'culinary-cuisine/index')
-            $SidebarLines += "        '$ModuleName/index',"
-        }
 
-        # Add autogenerated logic for the rest of the folder
+        # Fully autogenerated — index.md is included automatically via sidebar_position
         $SidebarLines += "        {"
         $SidebarLines += "          type: 'autogenerated',"
         $SidebarLines += "          dirName: '$ModuleName',"
@@ -1223,7 +1274,7 @@ function Global:Sync-SentinelShop {
     Write-Host "    $($Global:Icons.Arrow) Pipeline Path: $Output" -ForegroundColor DarkGray
 
     # 1. Load the Template
-    $TemplateFile = Join-Path $TemplateDir "core-config\shop-item.md"
+    $TemplateFile = Join-Path $TemplateDir "core-config\shop\hand-crafted.md"
     if (!(Test-Path $TemplateFile)) {
         Write-Host "    $($Global:Icons.Error) Template missing: $TemplateFile" -ForegroundColor Red
         return

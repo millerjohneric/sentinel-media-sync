@@ -67,7 +67,7 @@
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
     'TemplateDir': 'C:\Source\GEEK\Sentinel\sentinel-media-sync\templates'
     'PurgeWebsite': true
-    'PruneWebsite': false
+    'PruneWebsite': true
     'AutoStart': true
   
   - 'Name': 'Culinary Cuisine'
