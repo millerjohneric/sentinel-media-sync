@@ -63,10 +63,12 @@
     'RootType': 'web-root'
     'Path': 'C:\Source\GEEK\Sentinel\website'
     'SitePath': 'C:\Source_Studio\website'
+    'SitePathNetwork': 'L:\Source_Studio\website'
+    'UseNetworkPath': false
     'SiteName': 'Source Studio'
     'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
     'TemplateDir': 'C:\Source\GEEK\Sentinel\sentinel-media-sync\templates'
-    'PurgeWebsite': true
+    'PurgeWebsite': false
     'PruneWebsite': true
     'AutoStart': true
   

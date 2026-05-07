@@ -34,52 +34,65 @@ function Global:Initialize-SentinelWebRoot {
 function Global:Sync-SentinelRecipes {
     param($Source, $Output, $TemplateDir)
 
-    # 1. Load the Recipe Card Template
-    $TemplateFile = Join-Path $TemplateDir "core-config\recipes\recipe-card.md"
-    if (!(Test-Path $TemplateFile)) {
-        Write-Host "    $($Global:Icons.Error) Recipe Template missing: $TemplateFile" -ForegroundColor Red
+    Write-Host "`n  $($Global:Icons.Arrow) Processing Pipeline: Culinary Cuisine" -ForegroundColor Cyan
+
+    if (!(Test-Path $Output)) { New-Item -Path $Output -ItemType Directory -Force | Out-Null }
+
+    # Walk all jpg files recursively — each jpg = one recipe page
+    $RecipeImages = Get-ChildItem -Path $Source -Include "*.jpg","*.jpeg","*.png" -Recurse |
+        Where-Object { $_.Name -notmatch '^\.' }
+
+    if ($RecipeImages.Count -eq 0) {
+        Write-Host "    $($Global:Icons.Warning) No recipe images found in: $Source" -ForegroundColor Yellow
         return
     }
-    $TemplateContent = Get-Content $TemplateFile -Raw
 
-    # 2. Process Files (Recursive to handle sub-folders like /meals/dinners)
-    $RecipeFiles = Get-ChildItem -Path $Source -Filter *.yml -Recurse
-    
-    foreach ($File in $RecipeFiles) {
-        $Data = Get-Content $File.FullName -Raw | ConvertFrom-Yaml
-        $FinalContent = $TemplateContent
+    $PageCount = 0
+    foreach ($Img in $RecipeImages) {
+        # Title from filename: "amaretto-fudge" -> "Amaretto Fudge"
+        $RawName  = $Img.BaseName -replace '[-_]', ' '
+        $Title    = (Get-Culture).TextInfo.ToTitleCase($RawName.ToLower())
+        $CleanTitle = $Title -replace "['""]", ""
 
-        # --- STRING ENFORCEMENT ---
-        [string]$Title = if ($Data.Title) { $Data.Title } else { $File.BaseName }
-        $CleanTitle = $Title.Trim() -replace "['""]", ""
+        # Preserve subfolder structure relative to $Source
+        $RelDir   = $Img.DirectoryName.Replace($Source, "").TrimStart('\')
+        $TargetDir = if ($RelDir) { Join-Path $Output $RelDir } else { $Output }
+        if (!(Test-Path $TargetDir)) { New-Item -Path $TargetDir -ItemType Directory -Force | Out-Null }
 
-        $FinalContent = $FinalContent.Replace("{{title}}", $CleanTitle)
+        # Copy the image into the docs folder so it's co-located
+        $ImgDest = Join-Path $TargetDir $Img.Name
+        if (!(Test-Path $ImgDest)) { Copy-Item $Img.FullName $ImgDest -Force }
 
-        # Map Ingredients/Instructions (Handled as strings)
-        foreach ($Prop in $Data.PSObject.Properties) {
-            [string]$Val = if ($null -ne $Prop.Value) { $Prop.Value } else { "" }
-            $FinalContent = $FinalContent.Replace("{{$($Prop.Name)}}", $Val)
-        }
+        # Generate MDX page
+        $Content = @"
+---
+title: '$CleanTitle'
+---
 
-        # 3. Preserve Folder Structure in Output
-        $RelativePath = $File.DirectoryName.Replace($Source, "").TrimStart('\')
-        $TargetFolder = Join-Path $Output $RelativePath
-        if (!(Test-Path $TargetFolder)) { New-Item -ItemType Directory -Path $TargetFolder -Force | Out-Null }
+# $CleanTitle
 
-        $TargetPath = Join-Path $TargetFolder "$($File.BaseName).md"
-        $FinalContent | Out-File -FilePath $TargetPath -Encoding utf8 -Force
+<img src={require('./$($Img.Name)').default} alt='$CleanTitle' style={{maxWidth:'100%', borderRadius:'8px'}} />
+"@
+
+        $TargetPath = Join-Path $TargetDir "$($Img.BaseName).mdx"
+        $Content | Out-File -FilePath $TargetPath -Encoding utf8 -Force
+        $PageCount++
     }
-    Write-Host "    $($Global:Icons.Check) Recipe Module: $($RecipeFiles.Count) cards generated." -ForegroundColor Gray
+
+    Write-Host "    $($Global:Icons.Check) Recipe Module: $PageCount pages generated." -ForegroundColor Green
 }
 function Global:Sync-SentinelGallery {
     param($Source, $Output, $TemplateDir)
 
     Write-Host "`n  $($Global:Icons.Arrow) Processing Pipeline: Gallery" -ForegroundColor Cyan
 
-    # 1. Ensure output dir exists
+    # Noise words to filter out when building titles from XMP subjects
+    $NoiseWords = @('colorful','colorless','bokeh','unsaturated','black and white',
+                    'complementary colors','drinking accessoire','nature','animal',
+                    'person','wood','plant','tree','waters','vehicle','sky')
+
     if (!(Test-Path $Output)) { New-Item -Path $Output -ItemType Directory -Force | Out-Null }
 
-    # 2. Get all image files from source
     $ImageFiles = Get-ChildItem -Path $Source -Include "*.jpg","*.jpeg","*.png","*.webp" -Recurse
 
     if ($ImageFiles.Count -eq 0) {
@@ -87,30 +100,51 @@ function Global:Sync-SentinelGallery {
         return
     }
 
-    # 3. Group by date prefix (YYYYMMDD) — each date = one gallery session page
+    # Group by date prefix (YYYYMMDD)
     $Sessions = $ImageFiles | Group-Object { 
         if ($_.BaseName -match '^(\d{8})') { $Matches[1] } else { 'misc' }
     }
 
     $PageCount = 0
     foreach ($Session in $Sessions) {
-        $DateKey  = $Session.Name  # e.g. 20181124
-        $Images   = $Session.Group
+        $DateKey = $Session.Name
+        $Images  = $Session.Group
 
-        # Format date as readable title: 2018-11-24
-        $Title = if ($DateKey -match '^(\d{4})(\d{2})(\d{2})$') {
+        # --- READ XMP SUBJECTS FOR THIS SESSION ---
+        $SubjectFreq = @{}
+        foreach ($Img in $Images) {
+            $XmpPath = Join-Path $Img.DirectoryName "$($Img.BaseName).xmp"
+            if (Test-Path $XmpPath) {
+                $XmpContent = Get-Content $XmpPath -Raw -ErrorAction SilentlyContinue
+                if ($XmpContent -match '(?s)<dc:subject>.*?<rdf:Bag>(.*?)</rdf:Bag>') {
+                    $Matches[1] | Select-String -Pattern '<rdf:li>(.*?)</rdf:li>' -AllMatches |
+                        ForEach-Object { $_.Matches } |
+                        ForEach-Object {
+                            $Word = $_.Groups[1].Value.Trim()
+                            if ($NoiseWords -notcontains $Word.ToLower()) {
+                                $SubjectFreq[$Word] = ($SubjectFreq[$Word] ?? 0) + 1
+                            }
+                        }
+                }
+            }
+        }
+
+        # Pick top 2 subjects by frequency, fall back to formatted date
+        $TopSubjects = $SubjectFreq.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 2 | ForEach-Object { $_.Key }
+        $Title = if ($TopSubjects.Count -gt 0) {
+            ($TopSubjects -join ' · ').ToLower()
+        } elseif ($DateKey -match '^(\d{4})(\d{2})(\d{2})$') {
             "$($Matches[1])-$($Matches[2])-$($Matches[3])"
         } else { $DateKey }
 
         $Slug = $DateKey
 
-        # Build image markup using require() for local assets in MDX
+        # Build image markup
         $ImgLines = foreach ($Img in $Images) {
             "<img src={require('./$($Img.Name)').default} alt='$Title' style={{width:'100%', borderRadius:'6px'}} />"
         }
         $ImgBlock = $ImgLines -join "`n`n"
 
-        # Build the MDX page using GalleryView component
         $Content = @"
 ---
 title: '$Title'
@@ -125,8 +159,7 @@ $ImgBlock
 </GalleryView>
 "@
 
-        $TargetPath = Join-Path $Output "$Slug.mdx"
-        $Content | Out-File -FilePath $TargetPath -Encoding utf8 -Force
+        [System.IO.File]::WriteAllText((Join-Path $Output "$Slug.mdx"), $Content)
         $PageCount++
         Write-Host "    $($Global:Icons.Check) Gallery Page: $Title ($($Images.Count) images)" -ForegroundColor Gray
     }
@@ -199,12 +232,18 @@ function Global:Start-SentinelSync {
         if (!(Test-Path $PackagePath)) {
             Write-Host "  $($Global:Icons.Error) Engine framework missing. Re-scaffolding..." -ForegroundColor Yellow
             
-            if (Test-Path $WebLoc.Path) { Remove-Item $WebLoc.Path -Recurse -Force | Out-Null }
+            # Use robocopy to wipe the folder safely (handles long node_modules paths)
+            if (Test-Path $WebLoc.Path) {
+                $EmptyTemp = Join-Path $env:TEMP "sentinel_empty_tmp"
+                New-Item $EmptyTemp -ItemType Directory -Force | Out-Null
+                robocopy $EmptyTemp $WebLoc.Path /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS | Out-Null
+                Remove-Item $WebLoc.Path -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item $EmptyTemp -Recurse -Force -ErrorAction SilentlyContinue
+            }
             
             $ParentDir = Split-Path $WebLoc.Path
             $FolderName = Split-Path $WebLoc.Path -Leaf
             Push-Location $ParentDir
-            # Scaffolds directly into the folder name defined in your YAML
             npx --yes create-docusaurus@latest $FolderName classic --javascript --skip-install
             Pop-Location
 
@@ -214,6 +253,10 @@ function Global:Start-SentinelSync {
                 Write-Host "  Run manually: npx create-docusaurus@latest '$FolderName' classic --javascript --skip-install" -ForegroundColor Yellow
                 return
             }
+
+            # Fix BOM: rewrite package.json without BOM so webpack can parse it
+            $PkgContent = Get-Content $PackagePath -Raw
+            [System.IO.File]::WriteAllText($PackagePath, $PkgContent)
         }
 
         # 3. TEMPLATE STAGING: Ensures .md templates exist for Phase 2
@@ -241,6 +284,8 @@ function Global:Start-SentinelSync {
         
         if (Test-Path (Join-Path $WebLoc.Path "package.json")) {
             Write-Host "    $($Global:Icons.Check) Fresh Engine Scaffolding & Branding Complete." -ForegroundColor Green
+            # Generate the /docs landing page from YAML config
+            Write-SentinelDocsIndex -SitePath $WebLoc.Path -YamlData $Global:YamlData
         } else {
             Write-Host "    $($Global:Icons.Error) Scaffold FAILED. Check network/permissions." -ForegroundColor Red
         }
@@ -249,6 +294,10 @@ function Global:Start-SentinelSync {
 
     # Now run the media sync to populate /docs/ in the Prep folder
     $MediaStats = Sync-SentinelMedia -Locations $Global:YamlData.Locations -TargetWebsitePath $WebLoc.Path -Settings $Settings
+
+    # --- ARCHIVE SYNC: Route pickup zones to dated archive folders ---
+    Invoke-SentinelArchiveSync -Locations $Global:YamlData.Locations -FileTypes $Global:YamlData.FileTypes -Settings $Settings
+
     # --- PHASE 2: GENERATING ---
     Write-Host "`nPHASE 2: Generating Website Content..." -ForegroundColor Cyan
     
@@ -287,23 +336,25 @@ function Global:Start-SentinelSync {
     if (Test-Path $SidebarPath) { Set-ItemProperty -Path $SidebarPath -Name Attributes -Value "Normal" }
     Write-SentinelSidebars -SitePath $WebLoc.Path
 
-    # DEPLOY: Mirror to Production (C:\Source_Studio\website)
-    Write-Host "  $($Global:Icons.Check) Deploying to Production: $($WebLoc.SitePath)" -ForegroundColor Green
-    # We mirror everything EXCEPT node_modules to keep the sync fast...
-    robocopy $WebLoc.Path $WebLoc.SitePath /MIR /MT:8 /XD node_modules .git /NFL /NDL /NJH /NJS /nc /ns /np
+    # DEPLOY: Mirror to Production
+    # Resolve target path — network or local based on config switch
+    $DeployTarget = if ($WebLoc.UseNetworkPath -and -not [string]::IsNullOrWhiteSpace($WebLoc.SitePathNetwork)) {
+        $WebLoc.SitePathNetwork
+    } else {
+        $WebLoc.SitePath
+    }
+    Write-Host "  $($Global:Icons.Check) Deploying to Production: $DeployTarget" -ForegroundColor Green
+    robocopy $WebLoc.Path $DeployTarget /MIR /MT:8 /XD node_modules .git /NFL /NDL /NJH /NJS /nc /ns /np
 
-    # ...BUT we then verify node_modules exist in Production. 
-    # If missing, we do a targeted copy of just that folder.
-    if (!(Test-Path (Join-Path $WebLoc.SitePath "node_modules"))) {
+    # Verify node_modules exist in Production
+    if (!(Test-Path (Join-Path $DeployTarget "node_modules"))) {
         Write-Host "  $($Global:Icons.Warning) Initializing Production dependencies..." -ForegroundColor Yellow
-        # This is faster than a fresh 'npm install' because we already have them in Prep
-        robocopy $PrepNM (Join-Path $WebLoc.SitePath "node_modules") /E /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np
+        robocopy $PrepNM (Join-Path $DeployTarget "node_modules") /E /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np
     }
 
     # --- PHASE 4: AUTO-LAUNCH ---
-    # We pass the Gold Master path (SitePath) to the launcher
     if ($WebLoc.AutoLaunch -or $true) { 
-        Start-SentinelProduction -SitePath $WebLoc.SitePath
+        Start-SentinelProduction -SitePath $DeployTarget
     }
 
     # Display Final Report
@@ -798,7 +849,7 @@ function Global:Initialize-SentinelTemplates {
         'core-config/docusaurus.config.js' = "module.exports = { title: 'Source Studio', tagline: 'Sentinel Generated', url: 'http://localhost', baseUrl: '/', presets: [['classic', { docs: { sidebarPath: require.resolve('./sidebars.js') } }]], plugins: [] };"
         
         # This creates the automatic redirect from / to /docs
-        'core-config/index.js'             = "import React from 'react';`nimport {Redirect} from '@docusaurus/router';`nexport default function Home() { return <Redirect to='/docs' />; }"
+        'core-config/index.js'             = "import React from 'react';`nimport {Redirect} from '@docusaurus/router';`nexport default function Home() { return <Redirect to='/docs/index' />; }"
         
         'components/RecipeCard.js'         = "import React from 'react';`nexport default function RecipeCard({children, title}) { return (<div className='recipe-card'><h1>{title}</h1>{children}</div>); }"
         'components/ProductView.js'        = "import React from 'react';`nexport default function ProductView({children, title}) { return (<div className='shop-view'><h2>{title}</h2>{children}</div>); }"
@@ -941,18 +992,34 @@ function Global:Write-SentinelDocusaurusConfig {
 
     $ConfigPath = Join-Path $SitePath "docusaurus.config.js"
     
-    # Validation Logic: Ensure we have a title
     $SiteName = $YamlData.Settings.SiteName
     if ([string]::IsNullOrWhiteSpace($SiteName)) { 
-        $SiteName = "Sentinel Wiki" 
+        $SiteName = "source studio"
         Write-Host "  $($Global:Icons.Warning) No SiteName found in YAML, using default." -ForegroundColor Yellow
+    } else {
+        $SiteName = $SiteName.ToLower()
     }
+
+    $SiteUrl = if ($YamlData.Settings.RemoteUrl) { $YamlData.Settings.RemoteUrl } else { 'http://localhost:3000' }
+    # Strip port for the url field
+    $UrlBase = $SiteUrl -replace ':\d+$', ''
+
+    # Build navbar items dynamically from Website locations (skip web-root)
+    $Modules = $YamlData.Locations | Where-Object { $_.Role -eq 'Website' -and $_.RootType -ne 'web-root' }
+    $NavItems = ""
+    foreach ($M in $Modules) {
+        $Label = $M.Name.ToLower()
+        $Slug  = $M.Name.ToLower().Replace(' ', '-')
+        $NavItems += "        {to: '/docs/$Slug', label: '$Label', position: 'left'},`n"
+    }
+    # Add sidebar toggle last
+    $NavItems += "        {type: 'docSidebar', sidebarId: 'tutorialSidebar', position: 'right', label: '☰'},`n"
 
     $ConfigContent = @"
 const config = {
   title: '$SiteName',
   tagline: 'Sentinel Automated Wiki',
-  url: 'http://millerjohneric.asuscomm.com',
+  url: '$UrlBase',
   baseUrl: '/',
   onBrokenLinks: 'warn',
   favicon: 'img/favicon.ico',
@@ -969,9 +1036,7 @@ const config = {
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
         },
-        blog: {
-          showReadingTime: true,
-        },
+        blog: false,
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
@@ -983,9 +1048,7 @@ const config = {
     navbar: {
       title: '$SiteName',
       items: [
-        {type: 'docSidebar', sidebarId: 'tutorialSidebar', position: 'left', label: 'Knowledge Base'},
-        {to: '/blog', label: 'Blog', position: 'left'},
-      ],
+$NavItems      ],
     },
   }),
 };
@@ -993,8 +1056,8 @@ const config = {
 module.exports = config;
 "@
 
-    $ConfigContent | Out-File -FilePath $ConfigPath -Encoding utf8
-    Write-Host "  $($Global:Icons.Check) Dynamic config updated: Site Title set to '$SiteName'." -ForegroundColor Gray
+    [System.IO.File]::WriteAllText($ConfigPath, $ConfigContent)
+    Write-Host "  $($Global:Icons.Check) Dynamic config updated: $($Modules.Count) nav items generated." -ForegroundColor Gray
 }
 
 function Global:Get-SentinelRevision {
@@ -1166,6 +1229,59 @@ function Global:Install-SentinelFramework {
             Remove-Item "$path\*" -Recurse -Force -ErrorAction SilentlyContinue 
         }
     }
+}
+
+function Global:Write-SentinelDocsIndex {
+    param([string]$SitePath, $YamlData)
+
+    $DocsDir = Join-Path $SitePath "docs"
+    if (!(Test-Path $DocsDir)) { New-Item $DocsDir -ItemType Directory -Force | Out-Null }
+
+    $SiteName = if ($YamlData.Settings.SiteName) { $YamlData.Settings.SiteName } else { "Source Studio" }
+
+    # Build module cards from Website locations (skip web-root)
+    $Modules = $YamlData.Locations | Where-Object { $_.Role -eq 'Website' -and $_.RootType -ne 'web-root' }
+
+    $Cards = ""
+    foreach ($M in $Modules) {
+        $Name  = $M.Name
+        $Slug  = $Name.ToLower().Replace(' ', '-')
+        $Type  = $M.RootType -replace 'web-', ''
+        $Type  = (Get-Culture).TextInfo.ToTitleCase($Type)
+        $Path  = $M.Path
+        $Cards += @"
+
+## [$Name](/docs/$Slug)
+
+**Type:** $Type  
+**Source:** ``$Path``
+
+"@
+    }
+
+    $Content = @"
+---
+id: index
+title: '$SiteName'
+sidebar_label: 'Overview'
+sidebar_position: 1
+slug: /
+---
+
+# $SiteName
+
+Welcome to the Sentinel-generated knowledge base. Below are the active content modules synced into this site.
+
+---
+$Cards
+---
+
+*Generated by Sentinel Sync — updates automatically on each sync.*
+"@
+
+    $IndexPath = Join-Path $DocsDir "index.md"
+    [System.IO.File]::WriteAllText($IndexPath, $Content)
+    Write-Host "  $($Global:Icons.Check) Docs index generated: /docs" -ForegroundColor Green
 }
 
 function Global:Write-SentinelHomepageRedirect {
@@ -1405,6 +1521,166 @@ function Export-SentinelArchive {
     
     Copy-Item -Path $PSCommandPath -Destination (Join-Path $ArchiveDir $ArchiveName)
     Write-Host "Snapshot archived to $ArchiveDir\$ArchiveName" -ForegroundColor Green
+}
+
+
+function Global:Invoke-SentinelArchiveSync {
+    param($Locations, $FileTypes, $Settings)
+
+    $DryRun   = $Settings.DryRun
+    $ImgExts  = $FileTypes.Images
+    $RawExts  = $FileTypes.RAWs
+    $VidExts  = $FileTypes.Videos
+    $AudExts  = $FileTypes.Audio
+    $JunkList = $FileTypes.Junk
+    $AllMedia = $ImgExts + $RawExts + $VidExts + $AudExts + @('.xmp')
+
+    $PickupLocs   = $Locations | Where-Object { $_.Role -eq 'Pickup' }
+    $TimelineLoc  = $Locations | Where-Object { $_.Role -eq 'timeline' } | Select-Object -First 1
+    $RawLoc       = $Locations | Where-Object { $_.Role -eq 'RAW_Archive' } | Select-Object -First 1
+    $VideoLoc     = $Locations | Where-Object { $_.Role -eq 'Video_Archive' } | Select-Object -First 1
+    $AudioLoc     = $Locations | Where-Object { $_.Role -eq 'Audio_Archive' } | Select-Object -First 1
+    $ArchiveLocs  = $Locations | Where-Object { $_.Role -match 'Archive|timeline|Hybrid' }
+
+    $Stats = @{ Scanned = 0; Moved = 0; Reunited = 0; Purged = 0; Errors = 0 }
+
+    # --- PHASE A: ROUTE PICKUP ZONES ---
+    Write-Host "`nARCHIVE SYNC: Routing Pickup Zones..." -ForegroundColor Cyan
+
+    foreach ($Loc in $PickupLocs) {
+        if (!(Test-Path $Loc.Path)) {
+            Write-Host "  $($Global:Icons.Warning) OFFLINE: $($Loc.Name)" -ForegroundColor DarkGray
+            continue
+        }
+
+        $Files = Get-ChildItem -Path $Loc.Path -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $AllMedia -contains $_.Extension.ToLower() }
+
+        $Total = $Files.Count
+        $Count = 0
+
+        foreach ($File in $Files) {
+            $Stats.Scanned++
+            $Count++
+            $Ext = $File.Extension.ToLower()
+
+            # Skip exclusions
+            if (Test-SentinelExclusion -FullPath $File.FullName) { continue }
+
+            # Determine date from filename or creation time
+            $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
+                try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
+                catch { $File.CreationTime }
+            } else { $File.CreationTime }
+
+            $DateFolder = Join-Path $FileDate.ToString('yyyy') $FileDate.ToString('MM MMMM')
+
+            # Route to correct archive
+            $TargetRoot = $null
+            if ($RawExts -contains $Ext)   { $TargetRoot = $RawLoc?.Path }
+            elseif ($VidExts -contains $Ext)   { $TargetRoot = $VideoLoc?.Path }
+            elseif ($AudExts -contains $Ext)   { $TargetRoot = $AudioLoc?.Path }
+            elseif ($ImgExts -contains $Ext -or $Ext -eq '.xmp') { $TargetRoot = $TimelineLoc?.Path }
+
+            if ([string]::IsNullOrWhiteSpace($TargetRoot)) { continue }
+
+            $Destination = Join-Path $TargetRoot $DateFolder
+            Write-SentinelOdometer -Tag "ROUTE" -Source $Loc.Name -Path $File.Name -Current $Count -Total $Total
+
+            if (!$DryRun) {
+                try {
+                    if (!(Test-Path $Destination)) { New-Item $Destination -ItemType Directory -Force | Out-Null }
+                    $DestFile = Join-Path $Destination $File.Name
+                    if (!(Test-Path $DestFile)) {
+                        Move-Item $File.FullName $Destination -Force -ErrorAction Stop
+                        $Stats.Moved++
+                    }
+                } catch {
+                    $Stats.Errors++
+                }
+            }
+        }
+        Write-Host ""
+    }
+
+    # --- PHASE B: REUNITE SIDECARS ---
+    if (!$Settings.DisableJunkPurge) {
+        Write-Host "  $($Global:Icons.Arrow) Reuniting orphaned sidecars..." -ForegroundColor Gray
+        foreach ($Loc in $ArchiveLocs) {
+            if (!(Test-Path $Loc.Path)) { continue }
+            $Sidecars = Get-ChildItem $Loc.Path -Recurse -File -Filter "*.xmp" -ErrorAction SilentlyContinue
+            foreach ($S in $Sidecars) {
+                $Buddy = Get-SentinelBuddy -Sidecar $S -SearchRoot $Loc.Path
+                if ($Buddy -and $S.DirectoryName -ne $Buddy.DirectoryName -and !$DryRun) {
+                    try { Move-Item $S.FullName $Buddy.DirectoryName -Force -ErrorAction Stop; $Stats.Reunited++ }
+                    catch { $Stats.Errors++ }
+                } elseif (!$Buddy -and $Loc.PurgeOrphan -and !$DryRun) {
+                    try { Remove-Item $S.FullName -Force -ErrorAction Stop; $Stats.Purged++ }
+                    catch { $Stats.Errors++ }
+                }
+            }
+        }
+        Write-Host "    $($Global:Icons.Check) Sidecars: $($Stats.Reunited) reunited, $($Stats.Purged) orphans purged." -ForegroundColor Gray
+    }
+
+    # --- PHASE C: JUNK PURGE ---
+    if (!$Settings.DisableJunkPurge -and $JunkList) {
+        Write-Host "  $($Global:Icons.Arrow) Purging junk files..." -ForegroundColor Gray
+        $JunkCount = 0
+        foreach ($Loc in $ArchiveLocs) {
+            if (!(Test-Path $Loc.Path)) { continue }
+            Get-ChildItem $Loc.Path -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $JunkList -contains $_.Name } |
+                ForEach-Object {
+                    if (!$DryRun) {
+                        try { Remove-Item $_.FullName -Force -ErrorAction Stop; $JunkCount++ } catch {}
+                    }
+                }
+        }
+        Write-Host "    $($Global:Icons.Check) Junk purged: $JunkCount files." -ForegroundColor Gray
+    }
+
+    # --- PHASE D: SORT IN-PLACE (files sitting loose in year folders) ---
+    Write-Host "  $($Global:Icons.Arrow) Sorting unsorted files into month folders..." -ForegroundColor Gray
+    $SortedCount = 0
+    foreach ($Loc in $ArchiveLocs) {
+        if (!(Test-Path $Loc.Path)) { continue }
+
+        # Find files sitting directly in a YYYY folder (not already in a month subfolder)
+        Get-ChildItem $Loc.Path -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d{4}$' } |
+            ForEach-Object {
+                $YearDir = $_.FullName
+                $LooseFiles = Get-ChildItem $YearDir -File -ErrorAction SilentlyContinue
+
+                foreach ($File in $LooseFiles) {
+                    $Ext = $File.Extension.ToLower()
+                    if ($AllMedia -notcontains $Ext) { continue }
+
+                    # Get date from filename or creation time
+                    $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
+                        try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
+                        catch { $File.CreationTime }
+                    } else { $File.CreationTime }
+
+                    $MonthFolder = Join-Path $YearDir $FileDate.ToString('MM MMMM')
+
+                    if (!$DryRun) {
+                        try {
+                            if (!(Test-Path $MonthFolder)) { New-Item $MonthFolder -ItemType Directory -Force | Out-Null }
+                            $Dest = Join-Path $MonthFolder $File.Name
+                            if (!(Test-Path $Dest)) {
+                                Move-Item $File.FullName $MonthFolder -Force -ErrorAction Stop
+                                $SortedCount++
+                            }
+                        } catch { $Stats.Errors++ }
+                    }
+                }
+            }
+    }
+    Write-Host "    $($Global:Icons.Check) Sorted $SortedCount files into month folders." -ForegroundColor Gray
+
+    Write-Host "  $($Global:Icons.Check) Archive Sync: Scanned=$($Stats.Scanned) Moved=$($Stats.Moved) Errors=$($Stats.Errors)" -ForegroundColor Green
 }
 
 
