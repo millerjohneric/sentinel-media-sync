@@ -57,6 +57,20 @@ h1, h2, h3, h4 {
 .navbar {
   box-shadow: var(--shadow-sm);
   border-bottom: 1px solid var(--card-border);
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+
+/* Ensure mobile hamburger is always visible */
+.navbar__toggle {
+  display: flex !important;
+}
+
+@media (min-width: 997px) {
+  .navbar__toggle {
+    display: none !important;
+  }
 }
 
 /* --- RECIPE SECTIONS --- */
