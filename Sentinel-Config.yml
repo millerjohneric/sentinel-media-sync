@@ -44,7 +44,7 @@
   'Audio': [ '.mp3', '.wav', '.flac', '.m4a' ]
   'Docs': [ '.pdf', '.docx', '.txt' ]
   'Web': [ '.md', '.html' ]
-  'Sidecars': [ '.xmp', '.json', '.xml', '.yml' ]
+  'Sidecars': [ '.xmp', '.json', '.xml', '.yml', '.md', '.mdx' ]
   'Junk':
     - 'Thumbs.db'
     - 'desktop.ini'
@@ -67,7 +67,7 @@
     'SitePathNetwork': '\\LS720DB34C\share\Source_Studio\website'
     'UseNetworkPath': false
     'SiteName': 'Source Studio'
-    'SiteUrl': 'http://millerjohneric.asuscomm.com:3000'
+    'SiteUrl': 'https://millerjohneric.asuscomm.com'
     'TemplateDir': 'C:\Source\GEEK\Sentinel\sentinel-media-sync\templates'
     'PurgeWebsite': false
     'PruneWebsite': true

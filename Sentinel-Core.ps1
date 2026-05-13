@@ -123,7 +123,7 @@ $ImgMarkup
             $SubLabel = (Get-Culture).TextInfo.ToTitleCase($Sub.Name.Replace('-', ' '))
             $SubSlug  = $Sub.Name
             $SubFullPath = "$DocBasePath/$SubSlug"
-            $RecipeCount = (Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' -and $_.Name -notmatch '^_thumb_' }).Count
+            $RecipeCount = (Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png|md|mdx)$' -and $_.Name -notmatch '^_thumb_' -and $_.Name -notmatch '^index\.' }).Count
 
             # Pick a RANDOM image from subfolder (recursive) — changes each sync
             $AllThumbs = Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' }
@@ -142,7 +142,7 @@ $ImgMarkup
     $ThumbMarkup
     <div style={{padding:'0.6rem 0.8rem'}}>
       <div style={{fontWeight:600, fontSize:'0.95rem'}}>$SubLabel</div>
-      <div style={{fontSize:'0.78rem', color:'var(--ifm-color-secondary)', marginTop:'2px'}}>$RecipeCount recipes</div>
+      <div style={{fontSize:'0.78rem', color:'var(--ifm-color-secondary)', marginTop:'2px'}}>$RecipeCount pages</div>
     </div>
   </div>
 </a>
@@ -375,6 +375,13 @@ function Global:Start-SentinelSync {
         if ($WebLoc.PurgeWebsite -and (Test-Path $WebLoc.Path) -and (Test-Path $PackageCheck)) {
             Write-Host "  $($Global:Icons.Warning) Purging Prep Path: $($WebLoc.Path)" -ForegroundColor Yellow
             Get-ChildItem -Path $WebLoc.Path -Exclude "node_modules" | Remove-Item -Recurse -Force
+
+            # Auto-reset PurgeWebsite to false so next run is incremental
+            $ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
+            $ConfigRaw = [System.IO.File]::ReadAllText($ConfigPath)
+            $ConfigRaw = $ConfigRaw -replace "'PurgeWebsite': true", "'PurgeWebsite': false"
+            [System.IO.File]::WriteAllText($ConfigPath, $ConfigRaw, [System.Text.UTF8Encoding]::new($false))
+            Write-Host "  $($Global:Icons.Check) PurgeWebsite auto-reset to false." -ForegroundColor Gray
         }
     
         # PHASE 1: Preparing Staging Environment...
@@ -1529,8 +1536,17 @@ function Global:Start-SentinelProduction {
         Pop-Location
     }
 
-    # 2. Safety Cleanup
+    # 2. Safety Cleanup — kill existing node and any orphaned Sentinel Engine windows
     Stop-Process -Name 'node' -ErrorAction SilentlyContinue
+    Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {
+        try { $_.MainWindowTitle -match 'Sentinel Engine' } catch { $false }
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    # Ensure nginx is running (reverse proxy / SSL)
+    if (!(Get-Process nginx -ErrorAction SilentlyContinue)) {
+        Write-Host "  $($Global:Icons.Arrow) Starting nginx..." -ForegroundColor Gray
+        Start-Process "C:\nginx\nginx.exe" -WorkingDirectory "C:\nginx" -WindowStyle Hidden
+    }
 
     # 3. Execution via NPM
     # Running 'npm start' automatically finds the local docusaurus install
@@ -1843,6 +1859,38 @@ function Global:Invoke-SentinelArchiveSync {
 
     Write-Host "  $($Global:Icons.Check) Archive Sync: Scanned=$($Stats.Scanned) Moved=$($Stats.Moved) Errors=$($Stats.Errors)" -ForegroundColor Green
 }
+    # Scan all Website source locations for .include subfolders containing CSV/TXT file lists
+    Write-Host "  $($Global:Icons.Arrow) Processing .include folders..." -ForegroundColor Gray
+    $IncludeCount = 0
+    $WebsiteLocs = $Locations | Where-Object { $_.Role -eq 'Website' -and $_.RootType -ne 'web-root' }
+    foreach ($Loc in $WebsiteLocs) {
+        if (!(Test-Path $Loc.Path)) { continue }
+        $IncludeDirs = Get-ChildItem $Loc.Path -Directory -Recurse -Filter ".include" -ErrorAction SilentlyContinue
+        foreach ($IncDir in $IncludeDirs) {
+            $ParentDir = $IncDir.Parent.FullName
+            $ListFiles = Get-ChildItem $IncDir.FullName -File | Where-Object { $_.Extension -match '\.(csv|txt)$' }
+            foreach ($ListFile in $ListFiles) {
+                $Lines = Get-Content $ListFile.FullName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                foreach ($Line in $Lines) {
+                    $Line = $Line.Trim().Trim('"')
+                    if (!(Test-Path $Line)) { Write-Host "    $($Global:Icons.Warning) Not found: $Line" -ForegroundColor DarkGray; continue }
+                    $File = Get-Item $Line
+                    $Dest = Join-Path $ParentDir $File.Name
+                    if (!(Test-Path $Dest)) {
+                        Copy-Item $File.FullName $Dest -Force
+                        $IncludeCount++
+                    }
+                    # Copy sidecar
+                    $Sidecar = Join-Path $File.DirectoryName "$($File.BaseName).xmp"
+                    $SidecarDest = Join-Path $ParentDir "$($File.BaseName).xmp"
+                    if ((Test-Path $Sidecar) -and !(Test-Path $SidecarDest)) {
+                        Copy-Item $Sidecar $SidecarDest -Force
+                    }
+                }
+            }
+        }
+    }
+    Write-Host "    $($Global:Icons.Check) .include: $IncludeCount files pulled into parent folders." -ForegroundColor Gray
 
 
 # --- AUTO-RUN TRIGGER ---
