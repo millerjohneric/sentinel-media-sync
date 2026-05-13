@@ -23,7 +23,7 @@
   'PruneWebsite': true
 
 'Root_Layout':
-  'GitHub_Repo': \\LS720DB34C\share\GEEK\Sentinel\sentinel-media-sync'
+  'GitHub_Repo': \\LS720DB34C\share\on GEEK\Sentinel\sentinel-media-sync'
   'Data_Root': '\\LS720DB34C\share\Source\GEEK'
   'Network_Share': '\\GEEK\Source'
   'Mapped_Drive': 'S:\'

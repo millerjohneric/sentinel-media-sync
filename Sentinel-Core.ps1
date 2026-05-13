@@ -361,12 +361,8 @@ function Global:Start-SentinelSync {
     Initialize-SentinelWebRoot -BuildPath $BuildPath -DeployPath $TargetWebsitePath -EngineLoc $Engine
     Write-SentinelHomepageRedirect -SitePath $TargetWebsitePath
 
-    Write-Host "`nWaiting for user interrupt (1s)..." -ForegroundColor DarkGray
-    $Timer = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($Timer.Elapsed.TotalSeconds -lt 1) {
-        if ([System.Console]::KeyAvailable) { $null = [System.Console]::ReadKey($true); return }
-        Start-Sleep -Milliseconds 100 
-    }
+    Write-Host "`nWaiting for initial setup (1s)..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 1
 
     # --- PHASE 1: PREPARING STAGING ENVIRONMENT ---
     Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor Cyan
