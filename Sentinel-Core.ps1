@@ -79,12 +79,18 @@ function Global:Sync-SentinelRecipes {
             $ImgMarkup += "`n<img src={require('./$($Img.Name)').default} alt='$CleanTitle' style={{maxWidth:'100%', borderRadius:'8px', marginBottom:'1rem'}} />`n"
         }
 
+        # Extract recipe data from sidecar files
+        $RecipeData = Get-SentinelRecipeData -ImageDir $FirstImg.DirectoryName -BaseName $GroupName
+
+        # Build content with recipe data
+        $RecipeContent = Format-RecipeData -RecipeData $RecipeData
+
         $Content = @"
 ---
 title: '$CleanTitle'
 ---
 
-# $CleanTitle
+$RecipeContent
 
 $ImgMarkup
 "@
@@ -123,7 +129,14 @@ $ImgMarkup
             $SubLabel = (Get-Culture).TextInfo.ToTitleCase($Sub.Name.Replace('-', ' '))
             $SubSlug  = $Sub.Name
             $SubFullPath = "$DocBasePath/$SubSlug"
-            $RecipeCount = (Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png|md|mdx)$' -and $_.Name -notmatch '^_thumb_' -and $_.Name -notmatch '^index\.' }).Count
+            # Count unique recipe groups (not individual files)
+            $AllFiles = Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png|md|mdx)$' -and $_.Name -notmatch '^_thumb_' -and $_.Name -notmatch '^index\.' }
+            $RecipeCount = ($AllFiles | Group-Object {
+                $base = $_.BaseName
+                if ($base -match [regex]::Escape($GroupSep)) {
+                    $base.Substring(0, $base.LastIndexOf($GroupSep))
+                } else { $base }
+            }).Count
 
             # Pick a RANDOM image from subfolder (recursive) — changes each sync
             $AllThumbs = Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' }
@@ -150,15 +163,36 @@ $ImgMarkup
         }
 
         # Recipe cards for files directly in this folder (no subfolders)
-        foreach ($Img in $DirImgs) {
-            $RawName = $Img.BaseName -replace '[-_]', ' '
+        # Group files by their base name prefix (before -.- separator)
+        $GroupSep = '-.-'
+        $Groups = $DirImgs | Group-Object {
+            $base = $_.BaseName
+            if ($base -match [regex]::Escape($GroupSep)) {
+                $base.Substring(0, $base.LastIndexOf($GroupSep))
+            } else { $base }
+        }
+
+        foreach ($Group in $Groups) {
+            $GroupName = $Group.Name
+            $Images    = $Group.Group
+            $FirstImg  = $Images[0]
+
+            $RawName = $GroupName -replace '[-_]', ' '
             $RecipeTitle = (Get-Culture).TextInfo.ToTitleCase($RawName.ToLower()) -replace "['""]", ""
-            $RecipeFullPath = "$DocBasePath/$($Img.BaseName)"
+            $RecipeFullPath = "$DocBasePath/$GroupName"
+
+            # Pick one thumbnail from the group
+            $Thumb = $FirstImg
+            $ThumbName = "_thumb_$GroupName$($Thumb.Extension)"
+            $ThumbDest = Join-Path $Dir.FullName $ThumbName
+            Copy-Item $Thumb.FullName $ThumbDest -Force
+
             $Cards += @"
 <a href='$RecipeFullPath' style={{textDecoration:'none', color:'inherit'}}>
   <div style={{border:'1px solid var(--card-border)', borderRadius:'10px', overflow:'hidden', background:'var(--card-bg)', transition:'transform 0.2s, box-shadow 0.2s'}} onMouseOver={e=>{e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow='0 6px 20px rgba(0,0,0,0.1)'}} onMouseOut={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow=''}}>
-    <img src={require('./$($Img.Name)').default} alt='$RecipeTitle' style={{width:'100%', height:'130px', objectFit:'cover'}} />
+    <img src={require('./$ThumbName').default} alt='$RecipeTitle' style={{width:'100%', height:'130px', objectFit:'cover'}} />
     <div style={{padding:'0.6rem 0.8rem', fontWeight:500, fontSize:'0.9rem'}}>$RecipeTitle</div>
+    <div style={{fontSize:'0.78rem', color:'var(--ifm-color-secondary)', padding:'0 0.6rem 0.6rem'}}>$($Images.Count) photos</div>
   </div>
 </a>
 "@
@@ -167,10 +201,22 @@ $ImgMarkup
         if ($Cards -eq "" -and $DirDocs.Count -eq 0) { continue }
 
         # Add text-only doc cards for folders with no images
-        foreach ($Doc in $DirDocs) {
-            $RawName = $Doc.BaseName -replace '[-_]', ' '
+        # Group files by their base name prefix (before -.- separator)
+        $Groups = $DirDocs | Group-Object {
+            $base = $_.BaseName
+            if ($base -match [regex]::Escape($GroupSep)) {
+                $base.Substring(0, $base.LastIndexOf($GroupSep))
+            } else { $base }
+        }
+
+        foreach ($Group in $Groups) {
+            $GroupName = $Group.Name
+            $Docs = $Group.Group
+            $FirstDoc = $Docs[0]
+
+            $RawName = $GroupName -replace '[-_]', ' '
             $DocTitle = (Get-Culture).TextInfo.ToTitleCase($RawName.ToLower()) -replace "['""]", ""
-            $DocFullPath = "$DocBasePath/$($Doc.BaseName)"
+            $DocFullPath = "$DocBasePath/$GroupName"
             $Cards += @"
 <a href='$DocFullPath' style={{textDecoration:'none', color:'inherit'}}>
   <div style={{border:'1px solid var(--card-border)', borderRadius:'10px', padding:'1rem 1.25rem', background:'var(--card-bg)', transition:'transform 0.2s, box-shadow 0.2s'}} onMouseOver={e=>{e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow='0 6px 20px rgba(0,0,0,0.1)'}} onMouseOut={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow=''}}>
@@ -232,8 +278,9 @@ function Global:Sync-SentinelGallery {
         $DateKey = $Session.Name
         $Images  = $Session.Group
 
-        # --- READ XMP SUBJECTS FOR THIS SESSION ---
+        # --- READ XMP DATA FOR THIS SESSION ---
         $SubjectFreq = @{}
+        $AllGalleryData = @()
         foreach ($Img in $Images) {
             $XmpPath = Join-Path $Img.DirectoryName "$($Img.BaseName).xmp"
             if (Test-Path $XmpPath) {
@@ -248,6 +295,10 @@ function Global:Sync-SentinelGallery {
                             }
                         }
                 }
+                # Collect gallery data from first image's XMP
+                if ($Img -eq $Images[0]) {
+                    $AllGalleryData = Get-SentinelGalleryData -ImageDir $Img.DirectoryName -BaseName $Img.BaseName
+                }
             }
         }
 
@@ -261,6 +312,12 @@ function Global:Sync-SentinelGallery {
 
         $CleanTitle = $Title -replace "['""]", ""
         $Slug = $DateKey
+
+        # Build gallery data content
+        $GalleryContent = ""
+        if ($AllGalleryData) {
+            $GalleryContent = Format-GalleryData -GalleryData $AllGalleryData -ImageCount $Images.Count
+        }
 
         # Build image markup
         $ImgLines = foreach ($Img in $Images) {
@@ -285,6 +342,7 @@ title: '$CleanTitle'
 
 import GalleryView from '@site/src/components/GalleryView';
 
+$GalleryContent
 <GalleryView>
 
 $ImgBlock
@@ -356,6 +414,19 @@ function Global:Start-SentinelSync {
 
     # --- PHASE 0: INITIALIZATION ---
     Write-SentinelPhase0 -YamlData $Global:YamlData
+
+# --- OCR PREPROCESSING FOR RECIPES ---
+# Scan Culinary Cuisine locations with OCR flag enabled and generate sidecar YAML files.
+$OcrLocations = $Global:YamlData.Locations | Where-Object { $_.OCR -eq $true }
+foreach ($loc in $OcrLocations) {
+    Write-Host "\n  $($Global:Icons.Arrow) OCR preprocessing for $($loc.Name)" -ForegroundColor Cyan
+    Invoke-RecipeOcr -Source $loc.Path
+    # Auto-reset OCR flag to false after processing
+    $ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
+    $ConfigRaw = [System.IO.File]::ReadAllText($ConfigPath)
+    $ConfigRaw = $ConfigRaw -replace "'OCR': true", "'OCR': false"
+    [System.IO.File]::WriteAllText($ConfigPath, $ConfigRaw, [System.Text.UTF8Encoding]::new($false))
+}
     Initialize-SentinelSecrets
     Initialize-SentinelTemplates -TemplateDir $Engine.TemplateDir
     Initialize-SentinelWebRoot -BuildPath $BuildPath -DeployPath $TargetWebsitePath -EngineLoc $Engine
@@ -455,6 +526,9 @@ function Global:Start-SentinelSync {
     # Now run the media sync to populate /docs/ in the Prep folder
     $MediaStats = Sync-SentinelMedia -Locations $Global:YamlData.Locations -TargetWebsitePath $WebLoc.Path -Settings $Settings
 
+    # --- PHASE 1.5: MANIFEST INCLUSIONS ---
+    Invoke-SentinelCsvInclusions -Locations $Global:YamlData.Locations
+
     # --- ARCHIVE SYNC: Route pickup zones to dated archive folders ---
     Invoke-SentinelArchiveSync -Locations $Global:YamlData.Locations -FileTypes $Global:YamlData.FileTypes -Settings $Settings
 
@@ -496,6 +570,12 @@ function Global:Start-SentinelSync {
     if (Test-Path $SidebarPath) { Set-ItemProperty -Path $SidebarPath -Name Attributes -Value "Normal" }
     Write-SentinelSidebars -SitePath $WebLoc.Path
 
+    # Stop Docusaurus before deployment to prevent file lock issues
+    Write-Host "  $($Global:Icons.Arrow) Stopping Docusaurus before deployment..." -ForegroundColor Gray
+    $Port3000Pid = (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).OwningProcess
+    if ($Port3000Pid) { Stop-Process -Id $Port3000Pid -Force -ErrorAction SilentlyContinue }
+    Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
     # DEPLOY: Mirror to Production
     # Resolve target path — network or local based on config switch
     $DeployTarget = if ($WebLoc.UseNetworkPath -and -not [string]::IsNullOrWhiteSpace($WebLoc.SitePathNetwork)) {
@@ -518,31 +598,7 @@ function Global:Start-SentinelSync {
     }
 
     # Display Final Report
-    Write-SentinelReport -Stats $MediaStats -Watch $Global:SentinelTimer  -StartTime $StartTime -RemoteUrl $Global:YamlData.Settings.RemoteUrl
-    # --- PHASE 5: MISSION REPORT ---
-    $globalStopwatch.Stop()
-    
-    # FIX: Use the stopwatch's own elapsed time directly
-    $Duration = $globalStopwatch.Elapsed.ToString('mm\:ss')
-    
-    $ErrorColor = if ($MediaStats.Errors -gt 0) { 'Red' } else { 'Gray' }
-
-    Write-Host "`n==============================================================================" -ForegroundColor Gray
-    Write-Host " MISSION COMPLETE: $ToolHeader" -ForegroundColor Green
-    Write-Host "==============================================================================" -ForegroundColor Gray
-    Write-Host "  $($Global:Icons.Check) Files Scanned: $($MediaStats.Scanned)" -ForegroundColor Gray
-    Write-Host "  $($Global:Icons.Arrow) Files Moved:   $($MediaStats.Moved)"   -ForegroundColor Cyan
-    Write-Host "  $($Global:Icons.Error) Errors:        $($MediaStats.Errors)"  -ForegroundColor $ErrorColor
-    Write-Host "  $($Global:Icons.Check) Total Time:    $Duration"               -ForegroundColor White
-    Write-Host "  $($Global:Icons.Check) Remote Access: http://millerjohneric.asuscomm.com:3000" -ForegroundColor Cyan
-    Write-Host "==============================================================================" -ForegroundColor Gray
-}
-function Global:Get-SentinelWebLocations {
-    param($Locations)
-    # Filters locations that have a Website role and a defined SitePath
-    return $Locations | Where-Object {
-        $_.Role -eq 'Website' -and -not [string]::IsNullOrWhiteSpace($_."'SitePath'")
-    }
+    Write-SentinelReport -Stats $MediaStats -Watch $Global:SentinelTimer -RemoteUrl $Global:YamlData.Settings.RemoteUrl
 }
 
 function Global:Invoke-SentinelBranding {
@@ -640,104 +696,6 @@ function Global:Remove-SentinelBoilerplate {
     }
 }
 
-function Global:New-WebPageFromTemplate {
-    param(
-        [System.IO.FileInfo[]]$SourceFiles,
-        [string]$TargetFolder,
-        [string[]]$AssetExts,
-        [bool]$Overwrite,
-        [string]$FolderName,
-        [string]$RootType
-    )
-
-    # 1. Identify Primary Markdown and Sidecar YAML
-    $PrimaryFile = $SourceFiles | Where-Object { $_.Extension -match 'md' } | Select-Object -First 1
-    if ($null -eq $PrimaryFile) { $PrimaryFile = $SourceFiles[0] }
-
-    $Sidecar = $SourceFiles | Where-Object { $_.Extension -eq '.yml' -and $_.BaseName -eq $PrimaryFile.BaseName }
-    $Data = if ($Sidecar) { Get-Content $Sidecar.FullName -Raw | ConvertFrom-Yaml } else { $null }
-
-    # 2. Extract Title (Forced String Casting to fix Docusaurus [object Object] error)
-    [string]$TitleString = ""
-    if ($Data.Recipe) { $TitleString = $Data.Recipe.ToString() }
-    elseif ($Data.Product) { $TitleString = $Data.Product.ToString() }
-    else { $TitleString = $PrimaryFile.BaseName.ToString() }
-
-    # Clean title for YAML: remove existing quotes and wrap in single quotes
-    $CleanTitle = $TitleString -replace "['""]", ""
-    
-    $TargetPath = Join-Path $TargetFolder "$($PrimaryFile.BaseName).mdx"
-    if ((Test-Path $TargetPath) -and -not $Overwrite) { return 'SKIPPED' }
-
-    # 3. Process Content
-    $RawMD = ""
-    if ($PrimaryFile.Extension -match 'md') { $RawMD = Get-Content $PrimaryFile.FullName -Raw }
-    $MDContent = Clean-SentinelContent -Content $RawMD
-
-    # 4. Content Generation with Media handling (Preserved Logic)
-    $Body = ""
-    $MediaGallery = "`n### Media & Assets`n"
-
-    foreach ($file in $SourceFiles) {
-        if ($file.FullName -eq $PrimaryFile.FullName -or $file.Extension -eq '.yml') { continue }
-
-        $ext = $file.Extension.ToLower()
-        if ($ext -match 'jpg|png|webp|heic') {
-            $MediaGallery += "![Asset](./$($file.Name))`n"
-        } elseif ($ext -eq '.mp4') {
-            $MediaGallery += "#### Video: $($file.Name)`n<video controls width='100%' src={require('./$($file.Name)').default}></video>`n"
-        } elseif ($ext -eq '.mp3') {
-            $MediaGallery += "#### Audio: $($file.Name)`n<audio controls src={require('./$($file.Name)').default}></audio>`n"
-        }
-    }
-
-    # 5. Construct Header and Body
-    $Header = "---`ntitle: '$CleanTitle'`n---`n`n"
-
-    $ImportHeader = switch ($RootType) {
-        'web-culinary' { "import RecipeCard from '@site/src/components/templates/RecipeCard';`n`n" }
-        'web-shop'     { "import ProductView from '@site/src/components/templates/ProductView';`n`n" }
-        'web-gallery'  { "import Zoom from 'react-medium-image-zoom';`nimport 'react-medium-image-zoom/dist/styles.css';`n`n" }
-        Default { "" }
-    }
-
-    switch ($RootType) {
-        'web-culinary' {
-            $Ingreds = ""
-            if ($Data.Ingredients) {
-                $Ingreds = "### Ingredients`n"
-                foreach ($item in $Data.Ingredients) { $Ingreds += "* $item`n" }
-            }
-            $Body = "<RecipeCard title='$CleanTitle'>`n`n$MDContent`n`n$Ingreds`n</RecipeCard>`n$MediaGallery"
-        }
-        'web-shop' {
-            $Specs = ""
-            if ($Data.Details) {
-                $Specs = "### Specifications`n"
-                $Data.Details.PSObject.Properties | ForEach-Object { $Specs += "* **$($_.Name)**: $($_.Value)`n" }
-            }
-            $Body = "<ProductView title='$CleanTitle'>`n`n$MDContent`n`n$Specs`n</ProductView>`n$MediaGallery"
-        }
-        'web-gallery' {
-            $Body = "## Gallery: $CleanTitle`n`n"
-            foreach ($file in $SourceFiles) {
-                if ($file.Extension -match 'jpg|png|webp|heic') {
-                    $Body += "<Zoom><img src={require('./$($file.Name)').default} width='300' /></Zoom>`n"
-                }
-            }
-        }
-        Default { $Body = $MDContent + $MediaGallery }
-    }
-
-    # 6. Final Write
-    try {
-        ($Header + $ImportHeader + $Body) | Out-File $TargetPath -Encoding UTF8 -Force
-        return 'CREATED'
-    } catch {
-        return 'ERROR'
-    }
-}
-
 function Global:Write-SentinelOdometer {
     param($Tag, $Source, $Path, $Current, $Total, $Time = "")
     
@@ -758,14 +716,6 @@ function Global:Clear-SentinelOdometer {
     Write-Host ("`r" + (' ' * $Width) + "`r") -NoNewline
 }
 
-function Global:Clear-SentinelContent {
-    param([string]$Content)
-    if ([string]::IsNullOrWhiteSpace($Content)) { return "" }
-    $Escaped = $Content -replace '\{', '&#123;' -replace '\}', '&#125;'
-    $Escaped = $Escaped -replace '(?m)^:', '\:'
-    return $Escaped.Trim()
-}
-
 function Global:Write-SentinelReport {
     param(
         $Stats, 
@@ -783,7 +733,7 @@ function Global:Write-SentinelReport {
     $ErrorColor = if ($Stats.Errors -gt 0) { 'Red' } else { 'Gray' }
 
     Write-Host "`n==============================================================================" -ForegroundColor Gray
-    Write-Host " MISSION COMPLETE: Sentinel Unified Sync" -ForegroundColor Green
+    Write-Host " MISSION COMPLETE: $Global:ToolHeader" -ForegroundColor Green
     Write-Host "==============================================================================" -ForegroundColor Gray
     Write-Host "  $($Global:Icons.Check) Files Scanned: $($Stats.Scanned)" -ForegroundColor Gray
     Write-Host "  $($Global:Icons.Arrow) Files Moved:   $($Stats.Moved)"   -ForegroundColor Cyan
@@ -796,11 +746,10 @@ function Global:Write-SentinelReport {
 function Global:Write-SentinelCategoryYaml {
     param([string]$Path, [string]$Label)
     $YamlPath = Join-Path $Path '_category_.yml'
-    # Updated to strictly use single quotes for keys
     $Content = @"
-'label': '$Label'
-'link':
-  'type': 'generated-index'
+label: $Label
+link:
+  type: generated-index
 "@
     $Content | Out-File $YamlPath -Encoding UTF8 -Force
 }
@@ -813,30 +762,6 @@ function Global:Write-SentinelRecipeIndex {
     $Content | Set-Content -Path $Path -Encoding UTF8 -Force
 }
 
-function Global:Sync-SentinelWebContent {
-    param($Locations, $Settings)
-
-    $TargetWebsitePath = $Settings.SitePath.Replace("'", "")
-    
-    foreach ($loc in $Locations) {
-        if ($loc.Role -ne 'Website') { continue }
-
-        $Source = $loc.Path.Replace("'", "")
-        $SubFolder = $loc.WebSubFolder.Replace("'", "")
-        
-        # MAPPING: Content goes to C:\Source_Studio\website\<WebSubFolder>
-        $Destination = Join-Path $TargetWebsitePath $SubFolder
-
-        Write-Host "  $($Global:Icons.Arrow) Mirroring $SubFolder..." -ForegroundColor Gray
-        
-        # Ensure destination exists
-        if (!(Test-Path $Destination)) { New-Item $Destination -ItemType Directory -Force | Out-Null }
-
-        # Execute Robocopy (Mirror mode)
-        $RoboArgs = @($Source, $Destination, "*.md", "*.mdx", "*.yml", "*.png", "*.jpg", "/MIR", "/R:0", "/W:0", "/NDL", "/NFL")
-        & robocopy @RoboArgs
-    }
-}
 
 function Global:Format-SentinelNum {
     param([int]$Number)
@@ -857,20 +782,6 @@ function Global:Get-SentinelRoleColor {
     }
 }
 
-function Global:Get-SafeYaml {
-    param($v)
-    if ($v) { return $v.ToString().Replace("'", "''") } else { return "" }
-}
-
-function Global:Get-SafeYamlTitle {
-    param([string]$Title)
-    if ([string]::IsNullOrWhiteSpace($Title)) { return "Untitled" }
-
-    # Escape double quotes and wrap the whole title in double quotes
-    $CleanTitle = $Title -replace '"', '\"'
-    return "`"$CleanTitle`""
-}
-
 function Global:Get-SentinelBuddy {
     param([System.IO.FileInfo]$Sidecar, [string]$SearchRoot)
     try {
@@ -879,16 +790,6 @@ function Global:Get-SentinelBuddy {
         } | Select-Object -First 1
     }
     catch { return $null }
-}
-
-function Global:Get-SentinelWebExtensions {
-    param($FileTypeData)
-    $FinalList = @()
-    foreach ($item in $FileTypeData.WebContent) {
-        if ($FileTypeData.ContainsKey($item)) { $FinalList += $FileTypeData.$item }
-        else { $FinalList += $item }
-    }
-    return $FinalList | ForEach-Object { $_.ToLower().TrimStart('.') } | Select-Object -Unique
 }
 
 function Global:Get-SentinelWidth {
@@ -918,37 +819,6 @@ function Global:Initialize-SentinelSecrets {
     }
 }
 
-function Global:Invoke-SentinelPrune {
-    param($Locations, $Settings)
-
-    if (-not $Settings.PruneWebsite) { return }
-
-    Write-Host "`nPHASE 4: Pruning Orphaned Sandbox Content..." -ForegroundColor Cyan
-
-    foreach ($loc in $Locations) {
-        if ($loc.Role -ne 'Website' -or $loc.RootType -eq 'web-root') { continue }
-
-        $SourceDir = $loc.Path.Replace("'", "")
-        $SandboxDir = Join-Path $loc.SitePath.Replace("'", "") $loc.WebSubFolder.Replace("'", "")
-
-        if (Test-Path $SandboxDir) {
-            $SandboxFiles = Get-ChildItem $SandboxDir -Recurse -File
-            foreach ($File in $SandboxFiles) {
-                # Calculate what the source path would be
-                $RelativePath = $File.FullName.Replace($SandboxDir, "").TrimStart('\')
-                $EquivalentSource = Join-Path $SourceDir $RelativePath
-
-                # Check for MDX vs MD mismatch
-                $SourceCheck = $EquivalentSource -replace '\.mdx$', '.md'
-
-                if (!(Test-Path $SourceCheck) -and !(Test-Path $EquivalentSource)) {
-                    Write-Host "  $($Global:Icons.Warning) Pruning Orphan: $($File.Name)" -ForegroundColor Yellow
-                    Remove-Item $File.FullName -Force
-                }
-            }
-        }
-    }
-}
 
 function Global:Start-SentinelWebsite {
     param([string]$Path)
@@ -1351,54 +1221,6 @@ function Global:Write-SentinelSidebars {
     $FinalJS | Out-File -FilePath $SidebarFile -Encoding utf8 -Force
 }
 
-function Global:Install-SentinelFramework {
-    param(
-        [string]$TargetDir
-    )
-
-    if ([string]::IsNullOrWhiteSpace($TargetDir) -or $TargetDir -eq 'False') {
-        Write-Host "  $($Global:Icons.Error) SitePath invalid in config!" -ForegroundColor Red
-        return
-    }
-
-    $PackagePath = Join-Path $TargetDir 'package.json'
-    
-    if (!(Test-Path $PackagePath)) {
-        Write-Host "`n$($Global:Icons.Arrow) Engine Missing. Executing Automated JS Scaffold..." -ForegroundColor Yellow
-        
-        # 1. Setup Staging
-        $Parent = Split-Path $TargetDir
-        $TempPath = Join-Path $Parent "sentinel_scaffold_tmp"
-        if (Test-Path $TempPath) { Remove-Item $TempPath -Recurse -Force -ErrorAction SilentlyContinue }
-        New-Item -ItemType Directory -Path $TempPath -Force | Out-Null
-
-        Push-Location $TempPath
-        try {
-            # 2. THE COMMAND: Using --javascript explicitly to bypass the prompt
-            # Scaffolding into 'staged_engine' inside the temp folder
-            npx --yes create-docusaurus@latest staged_engine classic --skip-install --javascript
-            
-            # 3. TELEPORT: Move contents to the real TargetDir
-            if (!(Test-Path $TargetDir)) { New-Item $TargetDir -ItemType Directory -Force | Out-Null }
-            Write-Host "  $($Global:Icons.Arrow) Deploying JS Engine to: $TargetDir" -ForegroundColor Gray
-            Copy-Item -Path "staged_engine\*" -Destination $TargetDir -Recurse -Force
-        } finally {
-            Pop-Location
-            Remove-Item $TempPath -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    # 4. THE PURGE
-    Write-Host "  $($Global:Icons.Check) Purging Docusaurus boilerplate..." -ForegroundColor Gray
-    $Guts = @('docs', 'blog', 'static/img')
-    foreach ($folder in $Guts) {
-        $path = Join-Path $TargetDir $folder
-        if (Test-Path $path) { 
-            Remove-Item "$path\*" -Recurse -Force -ErrorAction SilentlyContinue 
-        }
-    }
-}
-
 function Global:Write-SentinelDocsIndex {
     param([string]$SitePath, $YamlData)
 
@@ -1427,6 +1249,19 @@ function Global:Write-SentinelDocsIndex {
 "@
     }
 
+    # Build navigation URLs from web-root location
+    $WebRoot = $YamlData.Locations | Where-Object { $_.RootType -eq 'web-root' }
+    $NavUrls = ""
+    if ($WebRoot -and $WebRoot.NavigationUrls) {
+        $NavUrls = "`n---`n`n## Quick Links`n`n"
+        foreach ($Url in $WebRoot.NavigationUrls) {
+            $Name = $Url.Name
+            $UrlStr = $Url.Url
+            $NavUrls += "- [$Name]($UrlStr)`n"
+        }
+        $NavUrls += "`n"
+    }
+
     $Content = @"
 ---
 id: index
@@ -1441,7 +1276,7 @@ slug: /
 Welcome to the Sentinel-generated knowledge base. Below are the active content modules synced into this site.
 
 ---
-$Cards
+$Cards$NavUrls
 ---
 
 *Generated by Sentinel Sync — updates automatically on each sync.*
@@ -1450,6 +1285,235 @@ $Cards
     $IndexPath = Join-Path $DocsDir "index.md"
     [System.IO.File]::WriteAllText($IndexPath, $Content, [System.Text.UTF8Encoding]::new($false))
     Write-Host "  $($Global:Icons.Check) Docs index generated: /docs" -ForegroundColor Green
+}
+
+# --- SIDECAR DATA EXTRACTION HELPERS ---
+
+function Global:Get-SentinelRecipeData {
+    param([string]$ImageDir, [string]$BaseName)
+    
+    $YmlPath = Join-Path $ImageDir "$BaseName.yml"
+    $XmpPath = Join-Path $ImageDir "$BaseName.xmp"
+    
+    $RecipeData = @{
+        Title = ""
+        Ingredients = @()
+        Instructions = @()
+        CookTime = ""
+        PrepTime = ""
+        Servings = ""
+        Tags = @()
+    }
+    
+    # Try YAML sidecar first
+    if (Test-Path $YmlPath) {
+        try {
+            $YamlContent = Get-Content $YmlPath -Raw | ConvertFrom-Yaml
+            if ($YamlContent.Recipe) {
+                $RecipeData.Title = $YamlContent.Recipe
+            }
+            if ($YamlContent.Ingredients -and $YamlContent.Ingredients.Count -gt 0) {
+                $RecipeData.Ingredients = $YamlContent.Ingredients
+            }
+            if ($YamlContent.Instructions -and $YamlContent.Instructions.Count -gt 0) {
+                $RecipeData.Instructions = $YamlContent.Instructions
+            }
+            if ($YamlContent.CookTime) {
+                $RecipeData.CookTime = $YamlContent.CookTime
+            }
+            if ($YamlContent.PrepTime) {
+                $RecipeData.PrepTime = $YamlContent.PrepTime
+            }
+            if ($YamlContent.Servings) {
+                $RecipeData.Servings = $YamlContent.Servings
+            }
+            if ($YamlContent.Tags -and $YamlContent.Tags.Count -gt 0) {
+                $RecipeData.Tags = $YamlContent.Tags
+            }
+        } catch {
+            Write-Host "    Warning: Could not parse YAML sidecar: $YmlPath" -ForegroundColor Yellow
+        }
+    }
+    
+    # Try XMP sidecar for tags/keywords
+    if (Test-Path $XmpPath) {
+        try {
+            $XmpContent = Get-Content $XmpPath -Raw
+            if ($XmpContent -match '(?s)<dc:subject>.*?<rdf:Bag>(.*?)</rdf:Bag>') {
+                $Matches[1] | Select-String -Pattern '<rdf:li>(.*?)</rdf:li>' -AllMatches |
+                    ForEach-Object { $_.Matches } |
+                    ForEach-Object {
+                        $Tag = $_.Groups[1].Value.Trim()
+                        if ($Tag -and $RecipeData.Tags -notcontains $Tag) {
+                            $RecipeData.Tags += $Tag
+                        }
+                    }
+            }
+        } catch {
+            Write-Host "    Warning: Could not parse XMP sidecar: $XmpPath" -ForegroundColor Yellow
+        }
+    }
+    
+    return $RecipeData
+}
+
+function Global:Get-SentinelGalleryData {
+    param([string]$ImageDir, [string]$BaseName)
+    
+    $XmpPath = Join-Path $ImageDir "$BaseName.xmp"
+    
+    $GalleryData = @{
+        Title = ""
+        Camera = ""
+        Lens = ""
+        Aperture = ""
+        ShutterSpeed = ""
+        ISO = ""
+        Keywords = @()
+        DateTaken = ""
+    }
+    
+    if (Test-Path $XmpPath) {
+        try {
+            $XmpContent = Get-Content $XmpPath -Raw
+            
+            # Extract title/description
+            if ($XmpContent -match '<dc:title>.*?<rdf:Alt>.*?<rdf:li xml:lang="x-default">(.*?)</rdf:li>') {
+                $GalleryData.Title = $Matches[1].Trim()
+            }
+            
+            # Extract camera model
+            if ($XmpContent -match '<t2m:CameraModelName>(.*?)</t2m:CameraModelName>') {
+                $GalleryData.Camera = $Matches[1].Trim()
+            }
+            
+            # Extract lens
+            if ($XmpContent -match '<t2m:LensID>(.*?)</t2m:LensID>') {
+                $GalleryData.Lens = $Matches[1].Trim()
+            }
+            
+            # Extract aperture
+            if ($XmpContent -match '<exif:ApertureValue>(.*?)</exif:ApertureValue>') {
+                $GalleryData.Aperture = $Matches[1].Trim()
+            }
+            
+            # Extract shutter speed
+            if ($XmpContent -match '<exif:ShutterSpeedValue>(.*?)</exif:ShutterSpeedValue>') {
+                $GalleryData.ShutterSpeed = $Matches[1].Trim()
+            }
+            
+            # Extract ISO
+            if ($XmpContent -match '<exif:ISOSpeedRatings>.*?<rdf:Bag>(.*?)</rdf:Bag>') {
+                $isoMatch = $Matches[1] -match '<rdf:li>(.*?)</rdf:li>'
+                if ($isoMatch) {
+                    $GalleryData.ISO = $Matches[1].Trim()
+                }
+            }
+            
+            # Extract keywords
+            if ($XmpContent -match '(?s)<dc:subject>.*?<rdf:Bag>(.*?)</rdf:Bag>') {
+                $Matches[1] | Select-String -Pattern '<rdf:li>(.*?)</rdf:li>' -AllMatches |
+                    ForEach-Object { $_.Matches } |
+                    ForEach-Object {
+                        $Keyword = $_.Groups[1].Value.Trim()
+                        if ($Keyword -and $GalleryData.Keywords -notcontains $Keyword) {
+                            $GalleryData.Keywords += $Keyword
+                        }
+                    }
+            }
+            
+            # Extract date taken
+            if ($XmpContent -match '<xap:CreateDate>(.*?)</xap:CreateDate>') {
+                $GalleryData.DateTaken = $Matches[1].Trim()
+            }
+        } catch {
+            Write-Host "    Warning: Could not parse XMP sidecar: $XmpPath" -ForegroundColor Yellow
+        }
+    }
+    
+    return $GalleryData
+}
+
+function Global:Format-RecipeData {
+    param($RecipeData)
+    
+    $Output = ""
+    
+    # Recipe title from YAML
+    if ($RecipeData.Title) {
+        $Output += "# $($RecipeData.Title)`n`n"
+    }
+    
+    # Metadata grid
+    $MetaItems = @()
+    if ($RecipeData.CookTime) { $MetaItems += "**Cook Time:** $($RecipeData.CookTime)" }
+    if ($RecipeData.PrepTime) { $MetaItems += "**Prep Time:** $($RecipeData.PrepTime)" }
+    if ($RecipeData.Servings) { $MetaItems += "**Servings:** $($RecipeData.Servings)" }
+    
+    if ($MetaItems.Count -gt 0) {
+        $Output += "<div style={{display:'flex', gap:'2rem', marginBottom:'1.5rem', padding:'1rem', background:'var(--card-bg)', borderRadius:'8px'}}>`n"
+        $Output += $MetaItems -join " | "
+        $Output += "`n</div>`n`n"
+    }
+    
+    # Ingredients
+    if ($RecipeData.Ingredients.Count -gt 0) {
+        $Output += "## Ingredients`n`n"
+        foreach ($Ing in $RecipeData.Ingredients) {
+            $Output += "- $Ing`n"
+        }
+        $Output += "`n"
+    }
+    
+    # Instructions
+    if ($RecipeData.Instructions.Count -gt 0) {
+        $Output += "## Instructions`n`n"
+        foreach ($Inst in $RecipeData.Instructions) {
+            $Output += "$Inst`n`n"
+        }
+    }
+    
+    # Tags
+    if ($RecipeData.Tags.Count -gt 0) {
+        $Output += "## Tags`n`n"
+        $Output += ($RecipeData.Tags -join ", ") + "`n"
+    }
+    
+    return $Output
+}
+
+function Global:Format-GalleryData {
+    param($GalleryData, $ImageCount)
+    
+    $Output = ""
+    
+    # Gallery title (from XMP or date-based)
+    if ($GalleryData.Title) {
+        $Output += "# $($GalleryData.Title)`n`n"
+    }
+    
+    # Camera metadata
+    $MetaItems = @()
+    if ($GalleryData.Camera) { $MetaItems += "**Camera:** $($GalleryData.Camera)" }
+    if ($GalleryData.Lens) { $MetaItems += "**Lens:** $($GalleryData.Lens)" }
+    if ($GalleryData.Aperture) { $MetaItems += "**Aperture:** $($GalleryData.Aperture)" }
+    if ($GalleryData.ShutterSpeed) { $MetaItems += "**Shutter:** $($GalleryData.ShutterSpeed)" }
+    if ($GalleryData.ISO) { $MetaItems += "**ISO:** $($GalleryData.ISO)" }
+    if ($GalleryData.DateTaken) { $MetaItems += "**Date:** $($GalleryData.DateTaken)" }
+    
+    if ($MetaItems.Count -gt 0) {
+        $Output += "<div style={{display:'flex', gap:'1.5rem', flexWrap:'wrap', marginBottom:'1.5rem', padding:'0.8rem', background:'var(--card-bg)', borderRadius:'8px', fontSize:'0.9rem', color:'var(--ifm-color-secondary)'}}>`n"
+        $Output += $MetaItems -join " | "
+        $Output += "`n</div>`n`n"
+    }
+    
+    # Keywords
+    if ($GalleryData.Keywords.Count -gt 0) {
+        $Output += "## Keywords`n`n"
+        $Output += ($GalleryData.Keywords -join ", ") + "`n`n"
+    }
+    
+    return $Output
 }
 
 function Global:Write-SentinelHomepageRedirect {
@@ -1536,10 +1600,20 @@ function Global:Start-SentinelProduction {
         Pop-Location
     }
 
-    # 2. Safety Cleanup — kill existing node and any orphaned Sentinel Engine windows
-    Stop-Process -Name 'node' -ErrorAction SilentlyContinue
-    Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {
-        try { $_.MainWindowTitle -match 'Sentinel Engine' } catch { $false }
+    # 2. Safety Cleanup — kill existing node, stale command prompts, and orphaned Sentinel Engine windows
+    Write-Host "  $($Global:Icons.Arrow) Sweeping stale terminal windows and processes..." -ForegroundColor Gray
+    
+    # Kill any process owning port 3000
+    $Port3000Pid = (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).OwningProcess
+    if ($Port3000Pid) { Stop-Process -Id $Port3000Pid -Force -ErrorAction SilentlyContinue }
+
+    # Kill all node processes (Docusaurus)
+    Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    # Kill any PowerShell windows that are running the Sentinel Engine
+    Get-Process powershell,pwsh -ErrorAction SilentlyContinue | Where-Object {
+        $Title = try { $_.MainWindowTitle } catch { "" }
+        $Title -match 'Sentinel Engine' -or $Title -match 'npm start' -or $Title -match 'docusaurus'
     } | Stop-Process -Force -ErrorAction SilentlyContinue
 
     # Ensure nginx is running (reverse proxy / SSL)
@@ -1670,7 +1744,16 @@ function Global:Sync-SentinelMedia {
             if (!(Test-Path $DestDir)) { New-Item $DestDir -ItemType Directory -Force | Out-Null }
 
             try {
-                if ($Settings.GlobalOverwrite -or !(Test-Path $DestinationPath)) {
+                $NeedsCopy = $true
+                if (Test-Path $DestinationPath) {
+                    $DestFile = Get-Item $DestinationPath
+                    # Skip if same size and not newer
+                    if ($File.Length -eq $DestFile.Length -and $File.LastWriteTime -le $DestFile.LastWriteTime) {
+                        $NeedsCopy = $false
+                    }
+                }
+
+                if ($NeedsCopy) {
                     Copy-Item -Path $File.FullName -Destination $DestinationPath -Force
                     $Stats.Moved++
                 }
@@ -1689,17 +1772,66 @@ function Global:Sync-SentinelMedia {
     return $Stats
 }
 
-function Export-SentinelArchive {
-    $ArchiveDir = Join-Path $PSScriptRoot "_archive"
-    if (!(Test-Path $ArchiveDir)) { New-Item $ArchiveDir -ItemType Directory }
-    
-    $Timestamp = Get-Date -Format "yyyyMMdd-HHmm"
-    $ArchiveName = "Sentinel-Core-v21.0-$Timestamp.ps1"
-    
-    Copy-Item -Path $PSCommandPath -Destination (Join-Path $ArchiveDir $ArchiveName)
-    Write-Host "Snapshot archived to $ArchiveDir\$ArchiveName" -ForegroundColor Green
-}
+function Global:Invoke-SentinelCsvInclusions {
+    param($Locations)
 
+    Write-Host "`nPHASE 1.5: Processing Manifest Inclusions (.include)..." -ForegroundColor Cyan
+
+    foreach ($Loc in $Locations) {
+        if (!(Test-Path $Loc.Path)) { continue }
+
+        $IncludeDir = Join-Path $Loc.Path ".include"
+        if (!(Test-Path $IncludeDir)) { continue }
+
+        Write-Host "  $($Global:Icons.Arrow) Scanning inclusions for: $($Loc.Name)" -ForegroundColor Gray
+
+        $CsvFiles = Get-ChildItem -Path $IncludeDir -Filter "*.csv" -Recurse
+        foreach ($Csv in $CsvFiles) {
+            # 1. Determine target folder relative to the root of the location
+            # Example: jems-tones\.include\good\best.csv -> jems-tones\good
+            $RelPathFromInclude = $Csv.DirectoryName.Replace($IncludeDir, "").TrimStart('\')
+            $TargetFolder = if ($RelPathFromInclude) { Join-Path $Loc.Path $RelPathFromInclude } else { $Loc.Path }
+            
+            if (!(Test-Path $TargetFolder)) { 
+                New-Item $TargetFolder -ItemType Directory -Force | Out-Null 
+                Write-Host "    + Created Category: $RelPathFromInclude" -ForegroundColor DarkGray
+            }
+
+            # 2. Process CSV lines
+            $Lines = Get-Content $Csv.FullName | Where-Object { ![string]::IsNullOrWhiteSpace($_) }
+            foreach ($Line in $Lines) {
+                # Convert path to UNC if needed
+                $SourcePath = $Line.Trim()
+                if ($SourcePath -match '^L:\\') {
+                    $SourcePath = $SourcePath -replace '^L:\\', '\\LS720DB34C\share\'
+                }
+
+                if (Test-Path $SourcePath) {
+                    $SourceFile = Get-Item $SourcePath
+                    $DestPath = Join-Path $TargetFolder $SourceFile.Name
+                    
+                    # Copy Image
+                    if (!(Test-Path $DestPath)) {
+                        Copy-Item $SourceFile.FullName $DestPath -Force
+                        Write-Host "      + Included: $($SourceFile.Name)" -ForegroundColor DarkGray
+                    }
+
+                    # Copy Sidecars (.xmp, .aae, etc)
+                    $BaseName = $SourceFile.BaseName
+                    $Sidecars = Get-ChildItem -Path $SourceFile.DirectoryName -Filter "$BaseName.*" | Where-Object { $_.Extension -ne $SourceFile.Extension }
+                    foreach ($Side in $Sidecars) {
+                        $SideDest = Join-Path $TargetFolder $Side.Name
+                        if (!(Test-Path $SideDest)) {
+                            Copy-Item $Side.FullName $SideDest -Force
+                        }
+                    }
+                } else {
+                    Write-Host "      $($Global:Icons.Warning) File not found: $SourcePath" -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+}
 
 function Global:Invoke-SentinelArchiveSync {
     param($Locations, $FileTypes, $Settings)
@@ -1859,41 +1991,62 @@ function Global:Invoke-SentinelArchiveSync {
 
     Write-Host "  $($Global:Icons.Check) Archive Sync: Scanned=$($Stats.Scanned) Moved=$($Stats.Moved) Errors=$($Stats.Errors)" -ForegroundColor Green
 }
-    # Scan all Website source locations for .include subfolders containing CSV/TXT file lists
-    Write-Host "  $($Global:Icons.Arrow) Processing .include folders..." -ForegroundColor Gray
-    $IncludeCount = 0
-    $WebsiteLocs = $Locations | Where-Object { $_.Role -eq 'Website' -and $_.RootType -ne 'web-root' }
-    foreach ($Loc in $WebsiteLocs) {
-        if (!(Test-Path $Loc.Path)) { continue }
-        $IncludeDirs = Get-ChildItem $Loc.Path -Directory -Recurse -Filter ".include" -ErrorAction SilentlyContinue
-        foreach ($IncDir in $IncludeDirs) {
-            $ParentDir = $IncDir.Parent.FullName
-            $ListFiles = Get-ChildItem $IncDir.FullName -File | Where-Object { $_.Extension -match '\.(csv|txt)$' }
-            foreach ($ListFile in $ListFiles) {
-                $Lines = Get-Content $ListFile.FullName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                foreach ($Line in $Lines) {
-                    $Line = $Line.Trim().Trim('"')
-                    if (!(Test-Path $Line)) { Write-Host "    $($Global:Icons.Warning) Not found: $Line" -ForegroundColor DarkGray; continue }
-                    $File = Get-Item $Line
-                    $Dest = Join-Path $ParentDir $File.Name
-                    if (!(Test-Path $Dest)) {
-                        Copy-Item $File.FullName $Dest -Force
-                        $IncludeCount++
-                    }
-                    # Copy sidecar
-                    $Sidecar = Join-Path $File.DirectoryName "$($File.BaseName).xmp"
-                    $SidecarDest = Join-Path $ParentDir "$($File.BaseName).xmp"
-                    if ((Test-Path $Sidecar) -and !(Test-Path $SidecarDest)) {
-                        Copy-Item $Sidecar $SidecarDest -Force
-                    }
-                }
-            }
-        }
-    }
-    Write-Host "    $($Global:Icons.Check) .include: $IncludeCount files pulled into parent folders." -ForegroundColor Gray
-
 
 # --- AUTO-RUN TRIGGER ---
+function Global:Invoke-RecipeOcr {
+    param([string]$Source)
+
+    if ([string]::IsNullOrWhiteSpace($Source) -or !(Test-Path $Source)) {
+        Write-Host "    $($Global:Icons.Warning) OCR source invalid: $Source" -ForegroundColor Yellow
+        return
+    }
+
+    $ImageFiles = Get-ChildItem -Path $Source -Recurse -File -Include *.jpg, *.jpeg, *.png
+    foreach ($Img in $ImageFiles) {
+        $YamlPath = [IO.Path]::ChangeExtension($Img.FullName, ".yml")
+        if (Test-Path $YamlPath) {
+            Write-Host "    $($Global:Icons.Check) OCR skipped (YAML exists): $($Img.Name)" -ForegroundColor Gray
+            continue
+        }
+
+        # Run Tesseract OCR, output to temp txt
+        $TempTxt = [IO.Path]::GetTempFileName()
+        $TessCmd = "tesseract `"$($Img.FullName)`" `"$TempTxt`" -l eng"
+        try {
+            & $Env:COMSPEC /c $TessCmd | Out-Null
+        } catch {
+            Write-Host "    $($Global:Icons.Error) Tesseract failed on $($Img.Name): $($_.Exception.Message)" -ForegroundColor Red
+            continue
+        }
+
+        $RawText = Get-Content -Path $TempTxt -Raw
+        Remove-Item $TempTxt -Force
+
+        # Very naive parsing: each line "Key: Value"
+        $YamlObj = @{}
+        foreach ($Line in $RawText -split "`n") {
+            $trim = $Line.Trim()
+            if ($trim -match "^([^:]+):\s*(.+)$") {
+                $key = $matches[1].Trim()
+                $val = $matches[2].Trim()
+                $YamlObj[$key] = $val
+            }
+        }
+
+        if ($YamlObj.Count -gt 0) {
+            $YamlContent = $YamlObj | ConvertTo-Yaml
+            $YamlContent | Set-Content -Path $YamlPath -Encoding UTF8
+            Write-Host "    $($Global:Icons.Check) OCR generated: $([IO.Path]::GetFileName($YamlPath))" -ForegroundColor Gray
+        } else {
+            Write-Host "    $($Global:Icons.Warning) OCR produced no parsable key/value for $($Img.Name)" -ForegroundColor Yellow
+        }
+    }
+}
+
+# --- AUTO-RUN TRIGGER ---
+if ($MyInvocation.MyCommand.Name -eq (Split-Path $PSCommandPath -Leaf) -or $null -eq $MyInvocation.Referrer) {
+    Start-SentinelSync
+}
 if ($MyInvocation.MyCommand.Name -eq (Split-Path $PSCommandPath -Leaf) -or $null -eq $MyInvocation.Referrer) {
     Start-SentinelSync
 }

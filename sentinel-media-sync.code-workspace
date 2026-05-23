@@ -4,19 +4,19 @@
 			"path": "."
 		},
 		{
-			"path": "../website"
+			"path": "\\\\LS720DB34C\\share\\Source_Studio\\website"
 		},
 		{
-			"path": "../../Photography_Hobby/jems-tones"
+			"path": "\\\\LS720DB34C\\share\\Photography_Hobby\\jems-tones"
 		},
 		{
-			"path": "../../millermade-handcrafted"
+			"path": "\\\\LS720DB34C\\share\\millermade-handcrafted"
 		},
 		{
-			"path": "../../Recipes"
+			"path": "\\\\LS720DB34C\\share\\Source_Studio"
 		},
 		{
-			"path": "../../../../Source_Studio"
+			"path": "L:/Recipes"
 		}
 	],
 	"settings": {

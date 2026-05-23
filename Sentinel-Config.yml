@@ -7,6 +7,8 @@
   'DriveIcon': 'the-source.ico'
 
 'Settings':
+  'SiteName': 'Source Studio'
+  'RemoteUrl': 'http://millerjohneric.asuscomm.com:3000'
   'LogPath': '_log'
   'MonitorDepth': 3
   'DisableJunkPurge': true
@@ -23,7 +25,7 @@
   'PruneWebsite': true
 
 'Root_Layout':
-  'GitHub_Repo': \\LS720DB34C\share\on GEEK\Sentinel\sentinel-media-sync'
+  'GitHub_Repo': 'C:\Source\GEEK\Sentinel\sentinel-media-sync'
   'Data_Root': '\\LS720DB34C\share\Source\GEEK'
   'Network_Share': '\\GEEK\Source'
   'Mapped_Drive': 'S:\'
@@ -72,6 +74,15 @@
     'PurgeWebsite': false
     'PruneWebsite': true
     'AutoStart': true
+    'NavigationUrls':
+      - 'Name': 'Source Studio'
+        'Url': 'https://millerjohneric.asuscomm.com/docs'
+      - 'Name': 'Router Admin'
+        'Url': 'https://millerjohneric.asuscomm.com:8443/Main_Login.asp'
+      - 'Name': 'Buffalo WebAccess'
+        'Url': 'https://millerjohneric.asuscomm.com:9000/ui/#/'
+      - 'Name': 'Buffalo LinkStation Config'
+        'Url': 'https://millerjohneric.asuscomm.com:9443/login.html'
   
   - 'Name': 'Culinary Cuisine'
     'Role': 'Website'
@@ -80,6 +91,7 @@
     'Path': '\\LS720DB34C\share\Recipes\culinary-cuisine'
     'GroupSeparator': '-.-'
     'Template': '[RECIPES]recipe-card'
+    'OCR': false
     'MonitorDepth': 99
     'SortDepth': null
     'Overwrite': true
