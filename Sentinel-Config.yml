@@ -1,272 +1,280 @@
-'Project_Status':
-  'Version': '17.8'
-  'Codenames':
-    'Network': 'Source'
-    'Machine': 'GEEK'
-    'Volume': 'S:'
-  'DriveIcon': 'the-source.ico'
-
-'Settings':
-  'SiteName': 'Source Studio'
-  'RemoteUrl': 'http://millerjohneric.asuscomm.com:3000'
-  'LogPath': '_log'
-  'MonitorDepth': 3
-  'DisableJunkPurge': true
-  'DryRun': false
-  'GlobalOverwrite': true
-  'EmailSettings':
-    'Enabled': true
-    'To': 'millerjohneric@gmail.com'
-    'CredPath': '.secure\gmail.cred'
-  'DefaultYear': 2026
-  'DateFormat': '%Y/%m Month'
-  'ChronoRegex': '^\d{4}/\d{2}\s\w+$'
-  'EventRegex': '^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$'
-  'PruneWebsite': true
-
-'Root_Layout':
-  'GitHub_Repo': 'C:\Source\GEEK\Sentinel\sentinel-media-sync'
-  'Data_Root': '\\LS720DB34C\share\Source\GEEK'
-  'Network_Share': '\\GEEK\Source'
-  'Mapped_Drive': 'S:\'
-
-
-'FileTypes':
-  'Exclusions':
-    - '.webaxs'
-    - 'trashbox'
-    - '.git'
-    - '$RECYCLE.BIN'
-    - '_putaway'
-    - 'System Volume Information'
-    - 'Excire_Data'
-  'Images': [ '.jpg', '.jpeg', '.png', '.heic', '.tif', '.tiff' ]
-  'RAWs': [ '.nef', '.cr2', '.arw', '.dng' ]
-  'Videos': [ '.mp4', '.mov', '.avi', '.mkv' ]
-  'Audio': [ '.mp3', '.wav', '.flac', '.m4a' ]
-  'Docs': [ '.pdf', '.docx', '.txt' ]
-  'Web': [ '.md', '.html' ]
-  'Sidecars': [ '.xmp', '.json', '.xml', '.yml', '.md', '.mdx' ]
-  'Junk':
-    - 'Thumbs.db'
-    - 'desktop.ini'
-    - '.DS_Store'
-    - 'ehthumbs.db'
-  'WebContent':
-    - 'Images'
-    - 'Docs'
-    - 'Sidecars'
-    - 'Web'
-    - '.mp4'
-    - '.yml'
-
-'Locations':
-  - 'Name': 'Source Studio Engine'
-    'Role': 'Website'
-    'RootType': 'web-root'
-    'Path': 'C:\Source\GEEK\Sentinel\website'
-    'SitePath': 'C:\Source_Studio\website'
-    'SitePathNetwork': '\\LS720DB34C\share\Source_Studio\website'
-    'UseNetworkPath': false
-    'SiteName': 'Source Studio'
-    'SiteUrl': 'https://millerjohneric.asuscomm.com'
-    'TemplateDir': 'C:\Source\GEEK\Sentinel\sentinel-media-sync\templates'
-    'PurgeWebsite': false
-    'PruneWebsite': true
-    'AutoStart': true
-    'NavigationUrls':
-      - 'Name': 'Source Studio'
-        'Url': 'https://millerjohneric.asuscomm.com/docs'
-      - 'Name': 'Router Admin'
-        'Url': 'https://millerjohneric.asuscomm.com:8443/Main_Login.asp'
-      - 'Name': 'Buffalo WebAccess'
-        'Url': 'https://millerjohneric.asuscomm.com:9000/ui/#/'
-      - 'Name': 'Buffalo LinkStation Config'
-        'Url': 'https://millerjohneric.asuscomm.com:9443/login.html'
-  
-  - 'Name': 'Culinary Cuisine'
-    'Role': 'Website'
-    'RootType': 'web-recipes'
-    'WebSubFolder': 'docs/culinary-cuisine'
-    'Path': '\\LS720DB34C\share\Recipes\culinary-cuisine'
-    'GroupSeparator': '-.-'
-    'Template': '[RECIPES]recipe-card'
-    'OCR': false
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'Structure':
-      - 'Event'
-
-  - 'Name': 'jems-tones'
-    'Role': 'Website'
-    'RootType': 'web-gallery'
-    'WebSubFolder': 'docs/jems-tones'
-    'Path': '\\LS720DB34C\share\Photography_Hobby\jems-tones'
-    'GroupSeparator': '-.-'
-    'Template': '[GALLERY]masonry-grid'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'Structure':
-      - 'Event'
-
-  - 'Name': 'millermade-handcrafted'
-    'Role': 'Website'
-    'RootType': 'web-shop'
-    'WebSubFolder': 'docs/millermade-handcrafted'
-    'Path': '\\LS720DB34C\share\millermade-handcrafted\website'
-    'GroupSeparator': '-.-'
-    'Template': '[SHOP]hand-crafted'
-    'MonitorDepth': 99
-    'SortDepth': null
-    'Overwrite': true
-    'PurgeOrphan': true
-    'Structure':
-      - 'Event'
-
-# --- ARCHIVES (Destinations) ---
-  - 'Name': 'timeline'
-    'Path': '\\LS720DB34C\share\Photo_Archive\timeline'
-    'Role': 'timeline'
-    'MonitorDepth': 1
-    'SortDepth': 1
-    'RootType': 'Photos'
-    'PurgeOrphan': false
-    'Structure':
-      - 'Chrono'
-      -
-  - 'Name': 'Photography_RAW'
-    'Path': '\\LS720DB34C\share\Photography_Hobby\_RAW'
-    'Role': 'RAW_Archive'
-    'MonitorDepth': 1
-    'SortDepth': 1
-    'PurgeOrphan': false
-    'RootType': 'RAW'
-    'Structure':
-      - 'Chrono'
-      - 'Event'
-
-  - 'Name': 'Shadow_Echoes'
-    'Path': '\\LS720DB34C\share\Photo_Archive\Shadow_Echoes'
-    'Role': 'InPlace_Archive'
-    'MonitorDepth': 2
-    'PurgeOrphan': false
-    'RootType': 'Hybrid'
-    'Structure':
-      - 'Chrono'
-      - 'Event'
-
-  - 'Name': 'Visual_Registry'
-    'Path': '\\LS720DB34C\share\Photo_Archive\Visual_Registry'
-    'Role': 'InPlace_Archive'
-    'MonitorDepth': 2
-    'PurgeOrphan': false
-    'RootType': 'Hybrid'
-    'Structure':
-      - 'Chrono'
-      - 'Event'
-
-  - 'Name': 'Legends'
-    'Path': '\\LS720DB34C\share\Photo_Archive\Legends'
-    'Role': 'InPlace_Archive'
-    'MonitorDepth': 2
-    'PurgeOrphan': false
-    'RootType': 'Hybrid'
-    'Structure':
-      - 'Chrono'
-      - 'Event'
-
-# --- PASSIVE SINKS ---
-  - 'Name': 'Videos'
-    'Path': '\\LS720DB34C\share\Movies_and_Videos\Videos'
-    'Role': 'Video_Archive'
-    'MonitorDepth': 0
-    'SortDepth': 1
-    'PurgeOrphan': false
-    'RootType': 'Videos'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'Sonic_Discography'
-    'Path': '\\LS720DB34C\share\Music\Sonic_Discography'
-    'Role': 'Audio_Archive'
-    'MonitorDepth': 0
-    'SortDepth': 1
-    'PurgeOrphan': false
-    'RootType': 'Audio'
-    'Structure':
-      - 'Chrono'
-
-# --- PICKUP ZONES (Loading Zones) ---
-  - 'Name': 'John'
-    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\John'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'Roena'
-    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\Roena'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'BigAssTablet'
-    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\BigAssTablet'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'Downloads'
-    'Path': '\\LS720DB34C\share\Sorting_Limbo\-in-box\Downloads'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'CzurDoc'
-    'Path': 'C:\Users\mille\Documents\CzurDoc\sources'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'SnippingTool'
-    'Path': 'C:\Users\mille\Pictures\SnippingTool'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
-
-  - 'Name': 'ControlCenter4'
-    'Path': 'C:\Users\mille\Pictures\ControlCenter4\Scan'
-    'Role': 'Pickup'
-    'MonitorDepth': 99
-    'SortDepth': 0
-    'PurgeOrphan': false
-    'Scope': 'Global'
-    'Structure':
-      - 'Chrono'
+Project_Status:
+  Version: "17.8"
+  Codenames:
+    Network: Source
+    Machine: GEEK
+    Volume: "S:"
+  DriveIcon: the-source.ico
+Settings:
+  SiteName: Source Studio
+  RemoteUrl: http://millerjohneric.asuscomm.com:3000
+  LogPath: _log
+  MonitorDepth: 3
+  DisableJunkPurge: true
+  DryRun: false
+  GlobalOverwrite: true
+  EmailSettings:
+    Enabled: true
+    To: millerjohneric@gmail.com
+    CredPath: .secure\gmail.cred
+  DefaultYear: 2026
+  DateFormat: "%Y/%m Month"
+  ChronoRegex: ^\d{4}/\d{2}\s\w+$
+  EventRegex: ^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$
+  PruneWebsite: true
+Root_Layout:
+  GitHub_Repo: C:\Source\GEEK\Sentinel\sentinel-media-sync
+  Data_Root: \\LS720DB34C\share\Source\GEEK
+  Network_Share: \\GEEK\Source
+  Mapped_Drive: S:\
+FileTypes:
+  Exclusions:
+    - .webaxs
+    - trashbox
+    - .git
+    - $RECYCLE.BIN
+    - _putaway
+    - System Volume Information
+    - Excire_Data
+  Images:
+    - .jpg
+    - .jpeg
+    - .png
+    - .heic
+    - .tif
+    - .tiff
+  RAWs:
+    - .nef
+    - .cr2
+    - .arw
+    - .dng
+  Videos:
+    - .mp4
+    - .mov
+    - .avi
+    - .mkv
+  Audio:
+    - .mp3
+    - .wav
+    - .flac
+    - .m4a
+  Docs:
+    - .pdf
+    - .docx
+    - .txt
+  Web:
+    - .md
+    - .html
+  Sidecars:
+    - .xmp
+    - .json
+    - .xml
+    - .yml
+    - .md
+    - .mdx
+  Junk:
+    - Thumbs.db
+    - desktop.ini
+    - .DS_Store
+    - ehthumbs.db
+  WebContent:
+    - Images
+    - Docs
+    - Sidecars
+    - Web
+    - .mp4
+    - .yml
+Locations:
+  - Name: Source Studio Engine
+    Role: Website
+    RootType: web-root
+    Path: C:\Source\GEEK\Sentinel\website
+    SitePath: C:\Source_Studio\website
+    SitePathNetwork: \\LS720DB34C\share\Source_Studio\website
+    UseNetworkPath: false
+    SiteName: Source Studio
+    SiteUrl: https://millerjohneric.asuscomm.com
+    TemplateDir: C:\Source\GEEK\Sentinel\sentinel-media-sync\templates
+    PurgeWebsite: false
+    PruneWebsite: true
+    AutoStart: true
+    NavigationUrls:
+      - Name: Sentinel Admin
+        Url: http://localhost:3001
+        Local: true
+      - Name: Source Studio
+        Url: https://millerjohneric.asuscomm.com/docs
+      - Name: Router Admin
+        Url: https://millerjohneric.asuscomm.com:8443/Main_Login.asp
+      - Name: Buffalo WebAccess
+        Url: https://millerjohneric.asuscomm.com:9000/ui/#/
+      - Name: Buffalo LinkStation Config
+        Url: https://millerjohneric.asuscomm.com:9443/login.html
+  - Name: Culinary Cuisine
+    Role: Website
+    RootType: web-recipes
+    WebSubFolder: docs/culinary-cuisine
+    Path: \\LS720DB34C\share\Recipes\culinary-cuisine
+    GroupSeparator: -.-
+    Template: "[RECIPES]recipe-card"
+    OCR: false
+    MonitorDepth: 99
+    SortDepth: null
+    Overwrite: true
+    PurgeOrphan: true
+    Structure:
+      - Event
+  - Name: jems-tones
+    Role: Website
+    RootType: web-gallery
+    WebSubFolder: docs/jems-tones
+    Path: \\LS720DB34C\share\Photography_Hobby\jems-tones
+    GroupSeparator: -.-
+    Template: "[GALLERY]masonry-grid"
+    MonitorDepth: 99
+    SortDepth: null
+    Overwrite: true
+    PurgeOrphan: true
+    Structure:
+      - Event
+  - Name: millermade-handcrafted
+    Role: Website
+    RootType: web-shop
+    WebSubFolder: docs/millermade-handcrafted
+    Path: \\LS720DB34C\share\millermade-handcrafted\website
+    GroupSeparator: -.-
+    Template: "[SHOP]hand-crafted"
+    MonitorDepth: 99
+    SortDepth: null
+    Overwrite: true
+    PurgeOrphan: true
+    Structure:
+      - Event
+  - Name: timeline
+    Path: \\LS720DB34C\share\Photo_Archive\timeline
+    Role: timeline
+    MonitorDepth: 1
+    SortDepth: 1
+    RootType: Photos
+    PurgeOrphan: false
+    Structure:
+      - Chrono
+      - null
+  - Name: Photography_RAW
+    Path: \\LS720DB34C\share\Photography_Hobby\_RAW
+    Role: RAW_Archive
+    MonitorDepth: 1
+    SortDepth: 1
+    PurgeOrphan: false
+    RootType: RAW
+    Structure:
+      - Chrono
+      - Event
+  - Name: Shadow_Echoes
+    Path: \\LS720DB34C\share\Photo_Archive\Shadow_Echoes
+    Role: InPlace_Archive
+    MonitorDepth: 2
+    PurgeOrphan: false
+    RootType: Hybrid
+    Structure:
+      - Chrono
+      - Event
+  - Name: Visual_Registry
+    Path: \\LS720DB34C\share\Photo_Archive\Visual_Registry
+    Role: InPlace_Archive
+    MonitorDepth: 2
+    PurgeOrphan: false
+    RootType: Hybrid
+    Structure:
+      - Chrono
+      - Event
+  - Name: Legends
+    Path: \\LS720DB34C\share\Photo_Archive\Legends
+    Role: InPlace_Archive
+    MonitorDepth: 2
+    PurgeOrphan: false
+    RootType: Hybrid
+    Structure:
+      - Chrono
+      - Event
+  - Name: Videos
+    Path: \\LS720DB34C\share\Movies_and_Videos\Videos
+    Role: Video_Archive
+    MonitorDepth: 0
+    SortDepth: 1
+    PurgeOrphan: false
+    RootType: Videos
+    Structure:
+      - Chrono
+  - Name: Sonic_Discography
+    Path: \\LS720DB34C\share\Music\Sonic_Discography
+    Role: Audio_Archive
+    MonitorDepth: 0
+    SortDepth: 1
+    PurgeOrphan: false
+    RootType: Audio
+    Structure:
+      - Chrono
+  - Name: John
+    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\John
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: Roena
+    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\Roena
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: BigAssTablet
+    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\BigAssTablet
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: Downloads
+    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\Downloads
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: CzurDoc
+    Path: C:\Users\mille\Documents\CzurDoc\sources
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: SnippingTool
+    Path: C:\Users\mille\Pictures\SnippingTool
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: ControlCenter4
+    Path: C:\Users\mille\Pictures\ControlCenter4\Scan
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
