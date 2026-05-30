@@ -5,23 +5,26 @@ Project_Status:
     Machine: GEEK
     Volume: "S:"
   DriveIcon: the-source.ico
-Settings:
-  SiteName: Source Studio
-  RemoteUrl: http://millerjohneric.asuscomm.com:3000
-  LogPath: _log
-  MonitorDepth: 3
-  DisableJunkPurge: true
-  DryRun: false
-  GlobalOverwrite: true
-  EmailSettings:
-    Enabled: true
-    To: millerjohneric@gmail.com
-    CredPath: .secure\gmail.cred
-  DefaultYear: 2026
-  DateFormat: "%Y/%m Month"
-  ChronoRegex: ^\d{4}/\d{2}\s\w+$
-  EventRegex: ^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$
-  PruneWebsite: true
+Settings: |-
+  "Settings": {
+      "SiteName": "Source Studio",
+      "RemoteUrl": "https://millerjohneric.asuscomm.com",
+      "LogPath": "_log",
+      "MonitorDepth": 3,
+      "DisableJunkPurge": true,
+      "DryRun": false,
+      "GlobalOverwrite": true,
+      "EmailSettings": {
+        "Enabled": true,
+        "To": "millerjohneric@gmail.com",
+        "CredPath": ".secure\\gmail.cred"
+      },
+      "DefaultYear": 2026,
+      "DateFormat": "%Y/%m Month",
+      "ChronoRegex": "^\\d{4}/\\d{2}\\s\\w+$",
+      "EventRegex": "^([a-zA-Z0-9_\\-\\s]+[/\\])*[a-zA-Z0-9_\\-\\s]+$",
+      "PruneWebsite": true
+  }
 Root_Layout:
   GitHub_Repo: C:\Source\GEEK\Sentinel\sentinel-media-sync
   Data_Root: \\LS720DB34C\share\Source\GEEK
@@ -90,20 +93,18 @@ Locations:
     RootType: web-root
     Path: C:\Source\GEEK\Sentinel\website
     SitePath: C:\Source_Studio\website
-    SitePathNetwork: \\LS720DB34C\share\Source_Studio\website
+    SitePathNetwork: L:\Recipes\Source_Studio\website
     UseNetworkPath: false
     SiteName: Source Studio
-    SiteUrl: https://millerjohneric.asuscomm.com
+    SiteUrl: https://millerjohneric.asuscomm.com/docs
     TemplateDir: C:\Source\GEEK\Sentinel\sentinel-media-sync\templates
-    PurgeWebsite: false
+    PurgeWebsite: true
     PruneWebsite: true
     AutoStart: true
     NavigationUrls:
       - Name: Sentinel Admin
-        Url: http://localhost:3001
-        Local: true
-      - Name: Source Studio
-        Url: https://millerjohneric.asuscomm.com/docs
+        Url: https://millerjohneric.asuscomm.com:3005
+        Local: false
       - Name: Router Admin
         Url: https://millerjohneric.asuscomm.com:8443/Main_Login.asp
       - Name: Buffalo WebAccess
@@ -114,7 +115,7 @@ Locations:
     Role: Website
     RootType: web-recipes
     WebSubFolder: docs/culinary-cuisine
-    Path: \\LS720DB34C\share\Recipes\culinary-cuisine
+    Path: L:\Recipes\culinary-cuisine
     GroupSeparator: -.-
     Template: "[RECIPES]recipe-card"
     OCR: false
@@ -128,12 +129,12 @@ Locations:
     Role: Website
     RootType: web-gallery
     WebSubFolder: docs/jems-tones
-    Path: \\LS720DB34C\share\Photography_Hobby\jems-tones
+    Path: L:\Photography_Hobby\jems-tones
     GroupSeparator: -.-
     Template: "[GALLERY]masonry-grid"
     MonitorDepth: 99
     SortDepth: null
-    Overwrite: true
+    Overwrite: false
     PurgeOrphan: true
     Structure:
       - Event
@@ -141,17 +142,17 @@ Locations:
     Role: Website
     RootType: web-shop
     WebSubFolder: docs/millermade-handcrafted
-    Path: \\LS720DB34C\share\millermade-handcrafted\website
+    Path: L:\millermade-handcrafted\website
     GroupSeparator: -.-
     Template: "[SHOP]hand-crafted"
     MonitorDepth: 99
     SortDepth: null
-    Overwrite: true
+    Overwrite: false
     PurgeOrphan: true
     Structure:
       - Event
   - Name: timeline
-    Path: \\LS720DB34C\share\Photo_Archive\timeline
+    Path: L:\Photo_Archive\timeline
     Role: timeline
     MonitorDepth: 1
     SortDepth: 1
@@ -161,7 +162,7 @@ Locations:
       - Chrono
       - null
   - Name: Photography_RAW
-    Path: \\LS720DB34C\share\Photography_Hobby\_RAW
+    Path: L:\Photography_Hobby\_RAW
     Role: RAW_Archive
     MonitorDepth: 1
     SortDepth: 1
@@ -171,7 +172,7 @@ Locations:
       - Chrono
       - Event
   - Name: Shadow_Echoes
-    Path: \\LS720DB34C\share\Photo_Archive\Shadow_Echoes
+    Path: L:\Photo_Archive\Shadow_Echoes
     Role: InPlace_Archive
     MonitorDepth: 2
     PurgeOrphan: false
@@ -180,7 +181,7 @@ Locations:
       - Chrono
       - Event
   - Name: Visual_Registry
-    Path: \\LS720DB34C\share\Photo_Archive\Visual_Registry
+    Path: L:\Photo_Archive\Visual_Registry
     Role: InPlace_Archive
     MonitorDepth: 2
     PurgeOrphan: false
@@ -189,7 +190,7 @@ Locations:
       - Chrono
       - Event
   - Name: Legends
-    Path: \\LS720DB34C\share\Photo_Archive\Legends
+    Path: L:\Photo_Archive\Legends
     Role: InPlace_Archive
     MonitorDepth: 2
     PurgeOrphan: false
@@ -198,7 +199,7 @@ Locations:
       - Chrono
       - Event
   - Name: Videos
-    Path: \\LS720DB34C\share\Movies_and_Videos\Videos
+    Path: L:\Movies_and_Videos\Videos
     Role: Video_Archive
     MonitorDepth: 0
     SortDepth: 1
@@ -207,7 +208,7 @@ Locations:
     Structure:
       - Chrono
   - Name: Sonic_Discography
-    Path: \\LS720DB34C\share\Music\Sonic_Discography
+    Path: L:\Music\Sonic_Discography
     Role: Audio_Archive
     MonitorDepth: 0
     SortDepth: 1
@@ -216,7 +217,7 @@ Locations:
     Structure:
       - Chrono
   - Name: John
-    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\John
+    Path: L:\Sorting_Limbo\-in-box\John
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -225,7 +226,7 @@ Locations:
     Structure:
       - Chrono
   - Name: Roena
-    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\Roena
+    Path: L:\Sorting_Limbo\-in-box\Roena
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -234,7 +235,7 @@ Locations:
     Structure:
       - Chrono
   - Name: BigAssTablet
-    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\BigAssTablet
+    Path: L:\Sorting_Limbo\-in-box\BigAssTablet
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -243,7 +244,7 @@ Locations:
     Structure:
       - Chrono
   - Name: Downloads
-    Path: \\LS720DB34C\share\Sorting_Limbo\-in-box\Downloads
+    Path: L:\Sorting_Limbo\-in-box\Downloads
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -278,3 +279,5 @@ Locations:
     Scope: Global
     Structure:
       - Chrono
+autoPollWhileSync: true
+portPollIntervalSeconds: 30
