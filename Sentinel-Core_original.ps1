@@ -1,5 +1,5 @@
 # ==============================================================================
-# Sentinel Core v20.128
+# Sentinel Core v20.128 [REPAIRED PRODUCTION ENGINE]
 # ==============================================================================
 
 $Global:Icons = @{
@@ -7,29 +7,160 @@ $Global:Icons = @{
     'Check'   = [char]0x2714
     'Warning' = [char]0x26A0
     'Error'   = [char]0x2718
+    'Info'    = [char]0x2139
 }
 
-# --- CORE ENGINE FUNCTIONS ---
+# --- 1. CORE WEB ROOT SELF-HEALING ENGINE ---
 
 function Global:Initialize-SentinelWebRoot {
-    param([string]$BuildPath, [string]$DeployPath, $EngineLoc)
+    param(
+        [string]$BuildPath, 
+        [string]$DeployPath, 
+        [string]$EngineLoc
+    )
+    
     Write-Host "  $($Global:Icons.Check) Initializing Web Root Structure..." -ForegroundColor Gray
     
-    # Create the base directory if it doesn't exist
     if (!(Test-Path $DeployPath)) { 
         New-Item -Path $DeployPath -ItemType Directory -Force | Out-Null 
     }
 
-    # These are the essential Docusaurus folders
     $Required = @("docs", "static", "src", "src/pages")
     foreach ($Folder in $Required) {
         $P = Join-Path $DeployPath $Folder
         if (!(Test-Path $P)) { 
             New-Item $P -ItemType Directory -Force | Out-Null 
-            Write-Host "    + Created: $Folder" -ForegroundColor DarkGray
+            Write-Host "    + Created Framework Sub-Node: $Folder" -ForegroundColor DarkGray
         }
     }
+
+    $PackagePath = Join-Path $DeployPath "package.json"
+    if (!(Test-Path $PackagePath)) {
+        Write-Host "  $($Global:Icons.Warning) package.json missing. Scaffolding classic framework..." -ForegroundColor Yellow
+        $ParentDir = Split-Path $DeployPath
+        if (!(Test-Path $ParentDir)) { New-Item -Path $ParentDir -ItemType Directory -Force | Out-Null }
+        Set-Location $ParentDir
+        $ProjectName = Split-Path $DeployPath -Leaf
+        
+        npx create-docusaurus@latest $ProjectName classic --typescript --skip-install
+        Set-Location $DeployPath
+    } else {
+        Set-Location $DeployPath
+    }
+
+    if (Test-Path $PackagePath) {
+        $PkgContent = Get-Content $PackagePath -Raw
+        [System.IO.File]::WriteAllText($PackagePath, $PkgContent, [System.Text.UTF8Encoding]::new($false))
+    }
 }
+
+# --- 2. CONFIGURATION STATUS AUTOMATED STATE RESETS ---
+
+function Global:Reset-SentinelStateFlags {
+    param([string]$ConfigPath)
+    if (Test-Path $ConfigPath) {
+        Write-Host "  $($Global:Icons.Check) Sync complete. Resetting active runtime flags..." -ForegroundColor Gray
+        $Config = Get-Content $ConfigPath -Raw
+        
+        # Self-heal temporary runtime state flags back to false
+        $Config = $Config -replace '"PruneWebsite":\s*true', '"PruneWebsite": false'
+        $Config = $Config -replace "'PruneWebsite':\s*true", "'PruneWebsite': false"
+        $Config = $Config -replace 'PurgeWebsite:\s*true', 'PurgeWebsite: false'
+        $Config = $Config -replace 'OCR:\s*true', 'OCR: false'
+        
+        [System.IO.File]::WriteAllText($ConfigPath, $Config, [System.Text.UTF8Encoding]::new($false))
+    }
+}
+
+# --- 3. DYNAMIC SIDEBAR NAVIGATION GENERATOR & ASSET MAPPER ---
+
+function Global:New-SentinelNavigationMap {
+    param(
+        [string]$SourceDocsPath,
+        [string]$TargetDocsPath
+    )
+
+    Write-Host "  $($Global:Icons.Check) Mapping Sub-Menus and Asset Inventories..." -ForegroundColor Gray
+    
+    if (!(Test-Path $SourceDocsPath)) {
+        Write-Host "  $($Global:Icons.Error) Source documents path not found: $SourceDocsPath" -ForegroundColor Red
+        return
+    }
+
+    # Recursively iterate through target photography/media directories
+    $SubDirectories = Get-ChildItem -Path $SourceDocsPath -Recurse -Directory
+
+    foreach ($Folder in $SubDirectories) {
+        # Enforce global structure ignore rules
+        if ($Folder.FullName -match '(\.webaxs|trashbox|\.git|\$RECYCLE\.BIN|_putaway|System Volume Information|Excire_Data)') {
+            continue
+        }
+
+        # Calculate relative path structures for Docusaurus URLs
+        $RelativePath = $Folder.FullName.Substring($SourceDocsPath.Length).TrimStart('\').TrimEnd('\')
+        $TargetFolder = Join-Path $TargetDocsPath $RelativePath
+        
+        if (!(Test-Path $TargetFolder)) {
+            New-Item -Path $TargetFolder -ItemType Directory -Force | Out-Null
+        }
+
+        # Inventory scans for text and multi-media components
+        $DirImages = Get-ChildItem -Path $Folder.FullName -File | Where-Object { $_.Extension -match '\.(jpg|jpeg|png|heic|webp|gif|tif|tiff)$' }
+        $DirDocs   = Get-ChildItem -Path $Folder.FullName -File | Where-Object { $_.Extension -eq '.md' -or $_.Extension -eq '.mdx' }
+        
+        # Skip fully empty directory trees
+        if ($DirImages.Count -eq 0 -and $DirDocs.Count -eq 0) { continue }
+
+        # Generate pretty-printed display headers
+        $TitleName = ($Folder.Name -replace '[-_]', ' ')
+        $TitleName = (Get-Culture).TextInfo.ToTitleCase($TitleName)
+
+        # Build clean index wrapper frontmatter
+        $MdxContent = @"
+---
+title: "$TitleName Index"
+sidebar_label: "$TitleName"
+slug: /${RelativePath -replace '\\', '/'}
+---
+
+import GalleryView from '@site/src/components/GalleryView';
+
+# $TitleName
+
+:::info Exploration Portal
+Browse through the available technical logs, assets, and documentation modules under this category.
+:::
+
+"@
+
+        # Render Responsive Image JSX Layout Grid
+        if ($DirImages.Count -gt 0) {
+            $MdxContent += "`n## Asset Gallery`n`n<GalleryView folder=`"${RelativePath -replace '\\', '/'}`" />`n"
+        }
+
+        # Build Structured Content Mappings for Sub-documentation files
+        if ($DirDocs.Count -gt 0) {
+            $MdxContent += "`n## Sub-Menu Documentation`n`n"
+            $MdxContent += "The following documentation assets are organized inside this subsystem:`n`n"
+            
+            foreach ($Doc in $DirDocs) {
+                if ($Doc.Name -match 'index\.mdx?$') { continue }
+                
+                $DocTitle = ($Doc.BaseName -replace '[-_]', ' ')
+                $DocTitle = (Get-Culture).TextInfo.ToTitleCase($DocTitle)
+                $DocLink  = "./" + ($RelativePath -replace '\\', '/') + "/" + $Doc.BaseName
+                
+                $MdxContent += "* **[$DocTitle]($DocLink)** - System log records and active sync schema.`n"
+            }
+        }
+
+        # Save compiled index out to the staging build site
+        $IndexTargetFile = Join-Path $TargetFolder "index.mdx"
+        [System.IO.File]::WriteAllText($IndexTargetFile, $MdxContent, [System.Text.UTF8Encoding]::new($false))
+    }
+}
+
+# --- 4. CULINARY PIPELINE PROCESSING SUITE ---
 
 function Global:Sync-SentinelRecipes {
     param($Source, $Output, $TemplateDir)
@@ -38,7 +169,6 @@ function Global:Sync-SentinelRecipes {
 
     if (!(Test-Path $Output)) { New-Item -Path $Output -ItemType Directory -Force | Out-Null }
 
-    # Walk all jpg files recursively — each jpg = one recipe page
     $RecipeImages = Get-ChildItem -Path $Source -Include "*.jpg","*.jpeg","*.png" -Recurse |
         Where-Object { $_.Name -notmatch '^\.' }
 
@@ -48,7 +178,6 @@ function Global:Sync-SentinelRecipes {
     }
 
     $PageCount = 0
-    # Group files by their base name prefix (before -.- separator)
     $GroupSep = '-.-'
     $Groups = $RecipeImages | Group-Object {
         $base = $_.BaseName
@@ -60,9 +189,8 @@ function Global:Sync-SentinelRecipes {
     foreach ($Group in $Groups) {
         $GroupName = $Group.Name
         $Images    = $Group.Group
-
-        # Use the first image's directory for output path
         $FirstImg  = $Images[0]
+        
         $RawName   = $GroupName -replace '[-_]', ' '
         $Title     = (Get-Culture).TextInfo.ToTitleCase($RawName.ToLower())
         $CleanTitle = $Title -replace "['""]", ""
@@ -71,7 +199,7 @@ function Global:Sync-SentinelRecipes {
         $TargetDir = if ($RelDir) { Join-Path $Output $RelDir } else { $Output }
         if (!(Test-Path $TargetDir)) { New-Item -Path $TargetDir -ItemType Directory -Force | Out-Null }
 
-        # Copy all images for this group
+        # Processing loop copying all local asset files
         $ImgMarkup = ""
         foreach ($Img in $Images) {
             $ImgDest = Join-Path $TargetDir $Img.Name
@@ -79,7 +207,7 @@ function Global:Sync-SentinelRecipes {
             $ImgMarkup += "`n<img src={require('./$($Img.Name)').default} alt='$CleanTitle' style={{maxWidth:'100%', borderRadius:'8px', marginBottom:'1rem'}} />`n"
         }
 
-        # Extract recipe data from sidecar files
+        # Generate sidecar recipe configuration files if not found
         $ServerYmlPath = Join-Path $FirstImg.DirectoryName "$GroupName.yml"
         if (!(Test-Path $ServerYmlPath)) {
             $TemplateYml = @"
@@ -97,18 +225,17 @@ Tags:
             [System.IO.File]::WriteAllText($ServerYmlPath, $TemplateYml, [System.Text.UTF8Encoding]::new($false))
         }
 
+        # Safely parse structural metadata
         $RecipeData = Get-SentinelRecipeData -ImageDir $FirstImg.DirectoryName -BaseName $GroupName
-
-        # Build content with recipe data
         $RecipeContent = Format-RecipeData -RecipeData $RecipeData
 
+        # Local URI routing adjustments for the new admin tools layout
         $UrlPath = $ServerYmlPath.Replace('\', '/')
-        $MappedPath = $UrlPath.Replace($Source.Replace('//LS720DB34C/share/', 'L:/'), '').TrimStart('/')
         $AdminMarkup = @"
 
 ---
 
-:::info Admin
+:::info Admin Tools
 **Edit Recipe Sidecar:** [Open in VS Code](vscode://file/$UrlPath) | Path: <code>$UrlPath</code>
 :::
 "@
@@ -129,36 +256,30 @@ $AdminMarkup
         $PageCount++
     }
 
-    Write-Host "    $($Global:Icons.Check) Recipe Module: $PageCount pages generated." -ForegroundColor Green
+    Write-Host "    $($Global:Icons.Check) Recipe Module: $PageCount markdown pages compiled." -ForegroundColor Green
 
-    # --- Generate index.mdx for every subfolder (thumbnail grid of contents) ---
+    # --- Structural auto-indexing generator for thumbnail landing grids ---
     $AllOutputDirs = Get-ChildItem -Path $Output -Directory -Recurse
-    # Also include the root output dir
     $DirsToIndex = @($AllOutputDirs) + @(Get-Item $Output)
 
     foreach ($Dir in $DirsToIndex) {
         $DirName  = $Dir.Name
         $Label    = (Get-Culture).TextInfo.ToTitleCase($DirName.Replace('-', ' '))
 
-        # Get subfolders — show as category cards
         $SubDirs  = Get-ChildItem $Dir.FullName -Directory
-        # Get images directly in this folder for recipe thumbnails — exclude _thumb_ files
         $DirImgs  = Get-ChildItem $Dir.FullName -File | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' -and $_.Name -notmatch '^_thumb_' } | Select-Object -First 12
-        # Also get markdown/mdx files that have no image (text-only recipes)
         $DirDocs  = Get-ChildItem $Dir.FullName -File | Where-Object { $_.Extension -match '\.(md|mdx)$' -and $_.Name -notmatch '^index\.' } | Select-Object -First 12
 
         $Cards = ""
-
-        # Build the absolute doc path for this folder (e.g. /docs/culinary-cuisine/meals)
         $RelFromOutput = $Dir.FullName.Replace($Output, '').TrimStart('\').Replace('\','/')
         $DocBasePath = if ($RelFromOutput) { "/docs/$($Output.Split('\')[-1])/$RelFromOutput" } else { "/docs/$($Output.Split('\')[-1])" }
 
-        # Subfolder cards with thumbnails
+        # Process Subfolder cards
         foreach ($Sub in $SubDirs) {
             $SubLabel = (Get-Culture).TextInfo.ToTitleCase($Sub.Name.Replace('-', ' '))
             $SubSlug  = $Sub.Name
             $SubFullPath = "$DocBasePath/$SubSlug"
-            # Count unique recipe groups (not individual files)
+            
             $AllFiles = Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png|md|mdx)$' -and $_.Name -notmatch '^_thumb_' -and $_.Name -notmatch '^index\.' }
             $RecipeCount = ($AllFiles | Group-Object {
                 $base = $_.BaseName
@@ -167,7 +288,6 @@ $AdminMarkup
                 } else { $base }
             }).Count
 
-            # Pick a RANDOM image from subfolder (recursive) — changes each sync
             $AllThumbs = Get-ChildItem $Sub.FullName -File -Recurse | Where-Object { $_.Extension -match '\.(jpg|jpeg|png)$' }
             $Thumb = if ($AllThumbs.Count -gt 0) { $AllThumbs | Get-Random } else { $null }
             $ThumbMarkup = ""
@@ -184,16 +304,14 @@ $AdminMarkup
     $ThumbMarkup
     <div style={{padding:'0.6rem 0.8rem'}}>
       <div style={{fontWeight:600, fontSize:'0.95rem'}}>$SubLabel</div>
-      <div style={{fontSize:'0.78rem', color:'var(--ifm-color-secondary)', marginTop:'2px'}}>$RecipeCount pages</div>
+      <div style={{fontSize:'0.78rem', color:'var(--ifm-color-secondary)', marginTop:'2px'}}>$RecipeCount categories</div>
     </div>
   </div>
 </a>
 "@
         }
 
-        # Recipe cards for files directly in this folder (no subfolders)
-        # Group files by their base name prefix (before -.- separator)
-        $GroupSep = '-.-'
+        # Process Photo Recipe Leaf Cards
         $Groups = $DirImgs | Group-Object {
             $base = $_.BaseName
             if ($base -match [regex]::Escape($GroupSep)) {
@@ -210,11 +328,9 @@ $AdminMarkup
             $RecipeTitle = (Get-Culture).TextInfo.ToTitleCase($RawName.ToLower()) -replace "['""]", ""
             $RecipeFullPath = "$DocBasePath/$GroupName"
 
-            # Pick one thumbnail from the group
-            $Thumb = $FirstImg
-            $ThumbName = "_thumb_$GroupName$($Thumb.Extension)"
+            $ThumbName = "_thumb_$GroupName$($FirstImg.Extension)"
             $ThumbDest = Join-Path $Dir.FullName $ThumbName
-            Copy-Item $Thumb.FullName $ThumbDest -Force
+            Copy-Item $FirstImg.FullName $ThumbDest -Force
 
             $Cards += @"
 <a href='$RecipeFullPath' style={{textDecoration:'none', color:'inherit'}}>
@@ -229,23 +345,20 @@ $AdminMarkup
 
         if ($Cards -eq "" -and $DirDocs.Count -eq 0) { continue }
 
-        # Add text-only doc cards for folders with no images
-        # Group files by their base name prefix (before -.- separator)
-        $Groups = $DirDocs | Group-Object {
+        # Process Text-Only / Non-Photo Document Leaf Cards
+        $TextGroups = $DirDocs | Group-Object {
             $base = $_.BaseName
             if ($base -match [regex]::Escape($GroupSep)) {
                 $base.Substring(0, $base.LastIndexOf($GroupSep))
             } else { $base }
         }
 
-        foreach ($Group in $Groups) {
+        foreach ($Group in $TextGroups) {
             $GroupName = $Group.Name
-            $Docs = $Group.Group
-            $FirstDoc = $Docs[0]
-
             $RawName = $GroupName -replace '[-_]', ' '
             $DocTitle = (Get-Culture).TextInfo.ToTitleCase($RawName.ToLower()) -replace "['""]", ""
             $DocFullPath = "$DocBasePath/$GroupName"
+            
             $Cards += @"
 <a href='$DocFullPath' style={{textDecoration:'none', color:'inherit'}}>
   <div style={{border:'1px solid var(--card-border)', borderRadius:'10px', padding:'1rem 1.25rem', background:'var(--card-bg)', transition:'transform 0.2s, box-shadow 0.2s'}} onMouseOver={e=>{e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow='0 6px 20px rgba(0,0,0,0.1)'}} onMouseOut={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow=''}}>
@@ -255,6 +368,7 @@ $AdminMarkup
 "@
         }
 
+        # Output index file
         $IndexContent = @"
 ---
 title: '$Label'
@@ -271,10 +385,34 @@ $Cards
         [System.IO.File]::WriteAllText((Join-Path $Dir.FullName "index.mdx"), $IndexContent, [System.Text.UTF8Encoding]::new($false))
     }
 
-    # Remove any old index.md files that conflict
+    # Clean legacy conflicting files
     Get-ChildItem $Output -Filter "index.md" -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
-    Write-Host "    $($Global:Icons.Check) Category indexes generated." -ForegroundColor Green
+    Write-Host "    $($Global:Icons.Check) Category indexes generated successfully." -ForegroundColor Green
 }
+
+# ==================================================================================
+# 🚀 RESTORED AUTOMATED RUNTIME PIPELINE WORKSPACE EXECUTION RUNNER
+# ==================================================================================
+
+# Define Localized Workspace Environment Parameters
+$EngineRoot   = "C:\Source\GEEK\Sentinel\sentinel-media-sync"
+$ConfigYaml   = "C:\Source\GEEK\Sentinel\sentinel-media-sync\Sentinel-Config.yml"
+
+# Hardcoded Mapped Paths for Source Studio Environment
+$SourceDocs   = "L:\Photography_Hobby\jems-tones"
+$WebWorkspace = "C:\Source_Studio\website"
+$TargetDocs   = "C:\Source_Studio\website\docs"
+
+Write-Host "`n$($Global:Icons.Arrow) Starting Sentinel Media Sync Lifecycle Build..." -ForegroundColor Cyan
+
+# Execute Core Automated Building Operations Sequence
+Initialize-SentinelWebRoot -BuildPath $SourceDocs -DeployPath $WebWorkspace -EngineLoc $EngineRoot
+New-SentinelNavigationMap -SourceDocsPath $SourceDocs -TargetDocsPath $TargetDocs
+Reset-SentinelStateFlags -ConfigPath $ConfigYaml
+
+Write-Host "`n$($Global:Icons.Check) Sentinel Engine Run Completed Tasks Successfully.`n" -ForegroundColor Green
+# ==================================================================================
+
 function Global:Sync-SentinelGallery {
     param($Source, $Output, $TemplateDir)
 
@@ -417,6 +555,7 @@ function Global:Start-SentinelSync {
     param([string]$ConfigPath = (Join-Path $PSScriptRoot 'Sentinel-Config.yml'))
 
     $Global:SentinelTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    # FIX: Capture the StartTime object here
     $StartTime = [DateTime]::Now 
     $Global:YamlData = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
     $globalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -443,16 +582,18 @@ function Global:Start-SentinelSync {
     # --- PHASE 0: INITIALIZATION ---
     Write-SentinelPhase0 -YamlData $Global:YamlData
 
-    # --- OCR PREPROCESSING FOR RECIPES ---
-    $OcrLocations = $Global:YamlData.Locations | Where-Object { $_.OCR -eq $true }
-    foreach ($loc in $OcrLocations) {
-        Write-Host "\n  $($Global:Icons.Arrow) OCR preprocessing for $($loc.Name)" -ForegroundColor Cyan
-        Invoke-RecipeOcr -Source $loc.Path
-        $ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
-        $ConfigRaw = [System.IO.File]::ReadAllText($ConfigPath)
-        $ConfigRaw = $ConfigRaw -replace "'OCR': true", "'OCR': false"
-        [System.IO.File]::WriteAllText($ConfigPath, $ConfigRaw, [System.Text.UTF8Encoding]::new($false))
-    }
+# --- OCR PREPROCESSING FOR RECIPES ---
+# Scan Culinary Cuisine locations with OCR flag enabled and generate sidecar YAML files.
+$OcrLocations = $Global:YamlData.Locations | Where-Object { $_.OCR -eq $true }
+foreach ($loc in $OcrLocations) {
+    Write-Host "\n  $($Global:Icons.Arrow) OCR preprocessing for $($loc.Name)" -ForegroundColor Cyan
+    Invoke-RecipeOcr -Source $loc.Path
+    # Auto-reset OCR flag to false after processing
+    $ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
+    $ConfigRaw = [System.IO.File]::ReadAllText($ConfigPath)
+    $ConfigRaw = $ConfigRaw -replace "'OCR': true", "'OCR': false"
+    [System.IO.File]::WriteAllText($ConfigPath, $ConfigRaw, [System.Text.UTF8Encoding]::new($false))
+}
     Initialize-SentinelSecrets
     Initialize-SentinelTemplates -TemplateDir $Engine.TemplateDir
     Initialize-SentinelWebRoot -BuildPath $BuildPath -DeployPath $TargetWebsitePath -EngineLoc $Engine
@@ -463,23 +604,15 @@ function Global:Start-SentinelSync {
 
     # --- PHASE 1: PREPARING STAGING ENVIRONMENT ---
     Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor Cyan
+
     
     $WebLoc = $Global:YamlData.Locations | Where-Object { $_.RootType -eq 'web-root' }
     if ($null -ne $WebLoc) {
-        # 1. FIXED PURGE: Clear the directory tree entirely using a clean staging directory mirror
+        # 1. Purge Prep Path (Staging) — only if engine framework already exists
         $PackageCheck = Join-Path $WebLoc.Path "package.json"
-        if ($WebLoc.PurgeWebsite -and (Test-Path $WebLoc.Path)) {
+        if ($WebLoc.PurgeWebsite -and (Test-Path $WebLoc.Path) -and (Test-Path $PackageCheck)) {
             Write-Host "  $($Global:Icons.Warning) Purging Prep Path: $($WebLoc.Path)" -ForegroundColor Yellow
-            
-            # Kill any background process locks before attempting folder modifications
-            $Port3000Pid = (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).OwningProcess
-            if ($Port3000Pid) { Stop-Process -Id $Port3000Pid -Force -ErrorAction SilentlyContinue }
-
-            $EmptyTemp = Join-Path $env:TEMP "sentinel_purge_tmp"
-            New-Item $EmptyTemp -ItemType Directory -Force | Out-Null
-            robocopy $EmptyTemp $WebLoc.Path /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS | Out-Null
-            Remove-Item $WebLoc.Path -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item $EmptyTemp -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -Path $WebLoc.Path -Exclude "node_modules" | Remove-Item -Recurse -Force
 
             # Auto-reset PurgeWebsite to false so next run is incremental
             $ConfigPath = Join-Path $PSScriptRoot 'Sentinel-Config.yml'
@@ -489,13 +622,17 @@ function Global:Start-SentinelSync {
             Write-Host "  $($Global:Icons.Check) PurgeWebsite auto-reset to false." -ForegroundColor Gray
         }
     
-        # 2. SELF-HEALING: Re-scaffold smoothly if package.json is missing or was just purged
+        # PHASE 1: Preparing Staging Environment...
+        Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor White
+    
+        # 2. SELF-HEALING: Re-scaffold if package.json is missing
         $PackagePath = Join-Path $WebLoc.Path "package.json"
         if (!(Test-Path $PackagePath)) {
-            Write-Host "  $($Global:Icons.Error) Engine framework missing or purged. Re-scaffolding..." -ForegroundColor Yellow
+            Write-Host "  $($Global:Icons.Error) Engine framework missing. Re-scaffolding..." -ForegroundColor Yellow
             
+            # Use robocopy to wipe the folder safely (handles long node_modules paths)
             if (Test-Path $WebLoc.Path) {
-                $EmptyTemp = Join-Path $env:TEMP "sentinel_empty_tmp"
+                $EmptyTemp = [string](Join-Path $EngineLoc "_sentinel_empty_purge")
                 New-Item $EmptyTemp -ItemType Directory -Force | Out-Null
                 robocopy $EmptyTemp $WebLoc.Path /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS | Out-Null
                 Remove-Item $WebLoc.Path -Recurse -Force -ErrorAction SilentlyContinue
@@ -508,12 +645,14 @@ function Global:Start-SentinelSync {
             npx --yes create-docusaurus@latest $FolderName classic --javascript --skip-install
             Pop-Location
 
+            # Verify scaffold succeeded before continuing
             if (!(Test-Path $PackagePath)) {
                 Write-Host "  $($Global:Icons.Error) CRITICAL: Scaffold failed. package.json not found at $PackagePath" -ForegroundColor Red
+                Write-Host "  Run manually: npx create-docusaurus@latest '$FolderName' classic --javascript --skip-install" -ForegroundColor Yellow
                 return
             }
 
-            # Fix BOM: rewrite package.json without BOM so webpack can parse it smoothly
+            # Fix BOM: rewrite package.json without BOM so webpack can parse it
             $PkgContent = Get-Content $PackagePath -Raw
             [System.IO.File]::WriteAllText($PackagePath, $PkgContent, [System.Text.UTF8Encoding]::new($false))
         }
@@ -543,11 +682,13 @@ function Global:Start-SentinelSync {
         
         if (Test-Path (Join-Path $WebLoc.Path "package.json")) {
             Write-Host "    $($Global:Icons.Check) Fresh Engine Scaffolding & Branding Complete." -ForegroundColor Green
+            # Generate the /docs landing page from YAML config
             Write-SentinelDocsIndex -SitePath $WebLoc.Path -YamlData $Global:YamlData
         } else {
             Write-Host "    $($Global:Icons.Error) Scaffold FAILED. Check network/permissions." -ForegroundColor Red
         }
     }
+
 
     # Now run the media sync to populate /docs/ in the Prep folder
     $MediaStats = Sync-SentinelMedia -Locations $Global:YamlData.Locations -TargetWebsitePath $WebLoc.Path -Settings $Settings
@@ -564,6 +705,8 @@ function Global:Start-SentinelSync {
     foreach ($loc in $Global:YamlData.Locations) {
         if ($loc.Template) {
             Write-Host "  $($Global:Icons.Arrow) Processing Pipeline: $($loc.Name)" -ForegroundColor Gray
+            
+            # Pass the Prep Path (Staging) as TemplateDir, and the Docs root as Target
             Invoke-SentinelWebPipeline `
                 -loc $loc `
                 -TemplateDir $WebLoc.Path `
@@ -598,18 +741,17 @@ function Global:Start-SentinelSync {
     Write-Host "  $($Global:Icons.Arrow) Stopping Docusaurus before deployment..." -ForegroundColor Gray
     $Port3000Pid = (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).OwningProcess
     if ($Port3000Pid) { Stop-Process -Id $Port3000Pid -Force -ErrorAction SilentlyContinue }
-    
-    $Port3001Pid = (Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue).OwningProcess
-    Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $Port3001Pid } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     # DEPLOY: Mirror to Production
+    # Resolve target path — network or local based on config switch
     $DeployTarget = if ($WebLoc.UseNetworkPath -and -not [string]::IsNullOrWhiteSpace($WebLoc.SitePathNetwork)) {
         $WebLoc.SitePathNetwork
     } else {
         $WebLoc.SitePath
     }
     Write-Host "  $($Global:Icons.Check) Deploying to Production: $DeployTarget" -ForegroundColor Green
-    robocopy $WebLoc.Path $DeployTarget /MIR /MT:8 /XD node_modules .git /XF sentinel-engine.log /NFL /NDL /NJH /NJS /nc /ns /np
+    robocopy $WebLoc.Path $DeployTarget /MIR /MT:8 /XD node_modules .git /NFL /NDL /NJH /NJS /nc /ns /np
 
     # Verify node_modules exist in Production
     if (!(Test-Path (Join-Path $DeployTarget "node_modules"))) {
@@ -625,6 +767,7 @@ function Global:Start-SentinelSync {
     # Display Final Report
     Write-SentinelReport -Stats $MediaStats -Watch $Global:SentinelTimer -RemoteUrl $Global:YamlData.Settings.RemoteUrl
 }
+
 function Global:Invoke-SentinelBranding {
     param([string]$SitePath, [string]$TemplateDir)
 
@@ -1239,10 +1382,10 @@ function Global:Write-SentinelSidebars {
     $SidebarLines += "  ],"
     $SidebarLines += "};"
 
-    # 2. Join and Write using explicit BOM-less UTF-8
+    # 2. Join and Write (Using single quotes for keys where possible)
     $FinalJS = $SidebarLines -join "`n"
     $SidebarFile = Join-Path $SitePath "sidebars.js"
-    [System.IO.File]::WriteAllText($SidebarFile, $FinalJS, [System.Text.UTF8Encoding]::new($false))
+    $FinalJS | Out-File -FilePath $SidebarFile -Encoding utf8 -Force
 }
 
 function Global:Write-SentinelDocsIndex {
@@ -1619,75 +1762,43 @@ function Global:Start-SentinelProduction {
     if (!(Test-Path (Join-Path $SitePath "node_modules"))) {
         Write-Host "  $($Global:Icons.Warning) Dependencies missing in Production. Installing..." -ForegroundColor Yellow
         Push-Location $SitePath
+        # Use --no-audit to keep it fast
         npm install --no-audit --no-fund
         Pop-Location
     }
 
-    # 2. Safety Cleanup — isolate target process cleanly
-    Write-Host "  $($Global:Icons.Arrow) Sweeping stale production processes..." -ForegroundColor Gray
+    # 2. Safety Cleanup — kill existing node, stale command prompts, and orphaned Sentinel Engine windows
+    Write-Host "  $($Global:Icons.Arrow) Sweeping stale terminal windows and processes..." -ForegroundColor Gray
     
-    $Port3001Pid = (Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue).OwningProcess
+    # Kill any process owning port 3000
     $Port3000Pid = (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue).OwningProcess
+    if ($Port3000Pid) { Stop-Process -Id $Port3000Pid -Force -ErrorAction SilentlyContinue }
+
+    # Kill all node processes (Docusaurus)
+    Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    # Kill any PowerShell windows that are running the Sentinel Engine
+    Get-Process powershell,pwsh -ErrorAction SilentlyContinue | Where-Object {
+        $Title = try { $_.MainWindowTitle } catch { "" }
+        $Title -match 'Sentinel Engine' -or $Title -match 'npm start' -or $Title -match 'docusaurus'
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    # Ensure nginx is running (reverse proxy / SSL)
+    if (!(Get-Process nginx -ErrorAction SilentlyContinue)) {
+        Write-Host "  $($Global:Icons.Arrow) Starting nginx..." -ForegroundColor Gray
+        Start-Process "C:\nginx\nginx.exe" -WorkingDirectory "C:\nginx" -WindowStyle Hidden
+    }
+
+    # 3. Execution via NPM
+    # Running 'npm start' automatically finds the local docusaurus install
+    $StartCommand = "Set-Location '$SitePath'; `$host.UI.RawUI.WindowTitle = 'Sentinel Engine'; npm start -- --host 0.0.0.0 --port 3000"
     
-    if ($Port3000Pid -and $Port3000Pid -ne $Port3001Pid) { 
-        Stop-Process -Id $Port3000Pid -Force -ErrorAction SilentlyContinue 
-        Start-Sleep -Seconds 2
-    }
-
-    # 3. Run npm start via a hidden PowerShell process
     try {
-        Write-Host "  $($Global:Icons.Arrow) Starting npm process..." -ForegroundColor Gray
-
-        $NpmPath = (Get-Command npm -ErrorAction SilentlyContinue).Source
-        if (-not $NpmPath) {
-            Write-Host "  $($Global:Icons.Error) npm command not found in PATH." -ForegroundColor Red
-            return
-        }
-
-        $LogFile = Join-Path $SitePath "sentinel-engine.log"
-        $LaunchCommand = "Set-Location -Path '$SitePath'; & '$NpmPath' start -- --host 0.0.0.0 --port 3000 2>&1 | Tee-Object -FilePath '$LogFile' -Append"
-
-        $Proc = Start-Process -FilePath "$PSHome\powershell.exe" -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $LaunchCommand -WorkingDirectory $SitePath -WindowStyle Hidden -PassThru
-        Write-Host "  $($Global:Icons.Check) Engine process started (PID: $($Proc.Id)). Logging to $LogFile" -ForegroundColor Gray
-
-        Write-Host "  $($Global:Icons.Arrow) Waiting for engine to bind port 3000..." -ForegroundColor Gray
-        $maxWait = 60
-        $elapsed = 0
-        $portReady = $false
-
-        while ($elapsed -lt $maxWait) {
-            if ($Proc.HasExited) {
-                Write-Host "  $($Global:Icons.Error) Engine process exited early (PID: $($Proc.Id))." -ForegroundColor Red
-                if (Test-Path $LogFile) { Get-Content $LogFile -Tail 20 | ForEach-Object { Write-Host "    $_" } }
-                return
-            }
-
-            $portCheck = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
-            if ($portCheck) {
-                $portReady = $true
-                Write-Host "  $($Global:Icons.Check) Port 3000 is listening!" -ForegroundColor Green
-                break
-            }
-
-            Start-Sleep -Seconds 2
-            $elapsed += 2
-            Write-Host "  $($Global:Icons.Arrow) Waiting... ($elapsed/$maxWait sec)" -ForegroundColor DarkGray
-        }
-
-        if ($portReady) {
-            Write-Host "  $($Global:Icons.Check) Engine is running on port 3000" -ForegroundColor Green
-        } else {
-            Write-Host "  $($Global:Icons.Warning) Engine not responding on port 3000. Check $LogFile" -ForegroundColor Yellow
-            if (Test-Path $LogFile) { Get-Content $LogFile -Tail 20 | ForEach-Object { Write-Host "    $_" } }
-        }
+        Start-Process powershell.exe -ArgumentList '-NoExit', '-Command', $StartCommand -WorkingDirectory $SitePath
+        Write-Host "  $($Global:Icons.Check) Engine spawned successfully." -ForegroundColor Gray
     } catch {
-        Write-Host "  $($Global:Icons.Error) Failed to start engine: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  $($Global:Icons.Error) Failed to launch: $($_.Exception.Message)" -ForegroundColor Red
     }
-}
-
-# --- AUTO-RUN TRIGGER ---
-if ($MyInvocation.MyCommand.Name -eq (Split-Path $PSCommandPath -Leaf) -or $null -eq $MyInvocation.Referrer) {
-    Start-SentinelSync
 }
 
 function Global:Sync-SentinelShop {
@@ -1716,6 +1827,7 @@ function Global:Sync-SentinelShop {
 
         if ($null -ne $FinalContent) {
             # --- STRING ENFORCEMENT LAYER ---
+            # We must ensure the Product/Title is a simple string, not a PSObject
             [string]$RawTitle = if ($Data.Product) { $Data.Product } else { $Item.BaseName }
             
             # Clean title: Remove quotes and trim to prevent YAML validation errors
@@ -1728,8 +1840,12 @@ function Global:Sync-SentinelShop {
             # 3. Map all other YAML properties
             foreach ($Prop in $Data.PSObject.Properties) {
                 $Key = $Prop.Name
+                # Explicitly cast value to string to prevent [object Object] leaks
                 [string]$Val = if ($null -ne $Prop.Value) { $Prop.Value } else { "" }
+                
+                # Double-check: If PowerShell still tries to pass an object, force a trim
                 if ($Val -like "*System.Collections*") { $Val = "Data Error" }
+                
                 $FinalContent = $FinalContent.Replace("{{$Key}}", $Val)
             }
 
@@ -1744,7 +1860,7 @@ function Global:Sync-SentinelShop {
             if (!(Test-Path $Output)) { New-Item -ItemType Directory -Path $Output -Force | Out-Null }
             
             $TargetPath = Join-Path $Output "$($Item.BaseName).md"
-            [System.IO.File]::WriteAllText($TargetPath, $FinalContent, [System.Text.UTF8Encoding]::new($false))
+            $FinalContent | Out-File -FilePath $TargetPath -Encoding utf8 -Force
             
             Write-Host "    $($Global:Icons.Check) Shop Item Generated: $($Item.BaseName)" -ForegroundColor Gray
         }
@@ -1761,13 +1877,16 @@ function Global:Sync-SentinelMedia {
     }
 
     foreach ($Loc in $Locations) {
+        # Only process Website modules; Skip the root itself
         if ($Loc.Role -ne 'Website' -or $Loc.RootType -eq 'web-root') { continue }
 
+        # Ensure we are targeting the 'docs' folder specifically
         $CleanBase = $TargetWebsitePath.TrimEnd('\')
         if ($CleanBase -notlike "*\docs") {
             $CleanBase = Join-Path $CleanBase "docs"
         }
 
+        # Handle the SubFolder (remove 'docs/' if the user put it in YAML)
         $Sub = $Loc.WebSubFolder.Replace("docs/", "").Replace("docs\", "").TrimStart('\')
         $GroupTarget = Join-Path $CleanBase $Sub
 
@@ -1787,6 +1906,7 @@ function Global:Sync-SentinelMedia {
             $RelativePath = $File.FullName.Replace($BaseSource, "").TrimStart('\')
             $DestinationPath = Join-Path $GroupTarget $RelativePath
 
+            # Ensure sub-directory exists
             $DestDir = Split-Path $DestinationPath
             if (!(Test-Path $DestDir)) { New-Item $DestDir -ItemType Directory -Force | Out-Null }
 
@@ -1794,6 +1914,7 @@ function Global:Sync-SentinelMedia {
                 $NeedsCopy = $true
                 if (Test-Path $DestinationPath) {
                     $DestFile = Get-Item $DestinationPath
+                    # Skip if same size and not newer
                     if ($File.Length -eq $DestFile.Length -and $File.LastWriteTime -le $DestFile.LastWriteTime) {
                         $NeedsCopy = $false
                     }
@@ -1804,6 +1925,7 @@ function Global:Sync-SentinelMedia {
                     $Stats.Moved++
                 }
                 
+                # Odometer for progress
                 Write-SentinelOdometer -Tag "COPY" -Source $Loc.Name -Path $File.Name -Current $CurrentCount -Total $TotalFiles
                 
             } catch {
@@ -1832,6 +1954,8 @@ function Global:Invoke-SentinelCsvInclusions {
 
         $CsvFiles = Get-ChildItem -Path $IncludeDir -Filter "*.csv" -Recurse
         foreach ($Csv in $CsvFiles) {
+            # 1. Determine target folder relative to the root of the location
+            # Example: jems-tones\.include\good\best.csv -> jems-tones\good
             $RelPathFromInclude = $Csv.DirectoryName.Replace($IncludeDir, "").TrimStart('\')
             $TargetFolder = if ($RelPathFromInclude) { Join-Path $Loc.Path $RelPathFromInclude } else { $Loc.Path }
             
@@ -1840,8 +1964,10 @@ function Global:Invoke-SentinelCsvInclusions {
                 Write-Host "    + Created Category: $RelPathFromInclude" -ForegroundColor DarkGray
             }
 
+            # 2. Process CSV lines
             $Lines = Get-Content $Csv.FullName | Where-Object { ![string]::IsNullOrWhiteSpace($_) }
             foreach ($Line in $Lines) {
+                # Convert path to UNC if needed
                 $SourcePath = $Line.Trim()
                 if ($SourcePath -match '^L:\\') {
                     $SourcePath = $SourcePath -replace '^L:\\', '\\LS720DB34C\share\'
@@ -1851,11 +1977,13 @@ function Global:Invoke-SentinelCsvInclusions {
                     $SourceFile = Get-Item $SourcePath
                     $DestPath = Join-Path $TargetFolder $SourceFile.Name
                     
+                    # Copy Image
                     if (!(Test-Path $DestPath)) {
                         Copy-Item $SourceFile.FullName $DestPath -Force
                         Write-Host "      + Included: $($SourceFile.Name)" -ForegroundColor DarkGray
                     }
 
+                    # Copy Sidecars (.xmp, .aae, etc)
                     $BaseName = $SourceFile.BaseName
                     $Sidecars = Get-ChildItem -Path $SourceFile.DirectoryName -Filter "$BaseName.*" | Where-Object { $_.Extension -ne $SourceFile.Extension }
                     foreach ($Side in $Sidecars) {
@@ -1892,6 +2020,7 @@ function Global:Invoke-SentinelArchiveSync {
 
     $Stats = @{ Scanned = 0; Moved = 0; Reunited = 0; Purged = 0; Errors = 0 }
 
+    # --- PHASE A: ROUTE PICKUP ZONES ---
     Write-Host "`nARCHIVE SYNC: Routing Pickup Zones..." -ForegroundColor Cyan
 
     foreach ($Loc in $PickupLocs) {
@@ -1911,8 +2040,10 @@ function Global:Invoke-SentinelArchiveSync {
             $Count++
             $Ext = $File.Extension.ToLower()
 
+            # Skip exclusions
             if (Test-SentinelExclusion -FullPath $File.FullName) { continue }
 
+            # Determine date from filename or creation time
             $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
                 try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
                 catch { $File.CreationTime }
@@ -1920,6 +2051,7 @@ function Global:Invoke-SentinelArchiveSync {
 
             $DateFolder = Join-Path $FileDate.ToString('yyyy') $FileDate.ToString('MM MMMM')
 
+            # Route to correct archive
             $TargetRoot = $null
             if ($RawExts -contains $Ext)   { $TargetRoot = $RawLoc?.Path }
             elseif ($VidExts -contains $Ext)   { $TargetRoot = $VideoLoc?.Path }
@@ -1947,6 +2079,7 @@ function Global:Invoke-SentinelArchiveSync {
         Write-Host ""
     }
 
+    # --- PHASE B: REUNITE SIDECARS ---
     if (!$Settings.DisableJunkPurge) {
         Write-Host "  $($Global:Icons.Arrow) Reuniting orphaned sidecars..." -ForegroundColor Gray
         foreach ($Loc in $ArchiveLocs) {
@@ -1963,9 +2096,9 @@ function Global:Invoke-SentinelArchiveSync {
                 }
             }
         }
-        Write-Host "    $($Global:Icons.Check) Sidecars: $($Stats.Reunited) reunited, $($Stats.Purged) orphans purged." -ForegroundColor Gray
     }
 
+    # --- PHASE C: JUNK PURGE ---
     if (!$Settings.DisableJunkPurge -and $JunkList) {
         Write-Host "  $($Global:Icons.Arrow) Purging junk files..." -ForegroundColor Gray
         $JunkCount = 0
@@ -1982,11 +2115,13 @@ function Global:Invoke-SentinelArchiveSync {
         Write-Host "    $($Global:Icons.Check) Junk purged: $JunkCount files." -ForegroundColor Gray
     }
 
+    # --- PHASE D: SORT IN-PLACE (files sitting loose in year folders) ---
     Write-Host "  $($Global:Icons.Arrow) Sorting unsorted files into month folders..." -ForegroundColor Gray
     $SortedCount = 0
     foreach ($Loc in $ArchiveLocs) {
         if (!(Test-Path $Loc.Path)) { continue }
 
+        # Find files sitting directly in a YYYY folder (not already in a month subfolder)
         Get-ChildItem $Loc.Path -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d{4}$' } |
             ForEach-Object {
@@ -1997,6 +2132,7 @@ function Global:Invoke-SentinelArchiveSync {
                     $Ext = $File.Extension.ToLower()
                     if ($AllMedia -notcontains $Ext) { continue }
 
+                    # Get date from filename or creation time
                     $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
                         try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
                         catch { $File.CreationTime }
@@ -2018,9 +2154,11 @@ function Global:Invoke-SentinelArchiveSync {
             }
     }
     Write-Host "    $($Global:Icons.Check) Sorted $SortedCount files into month folders." -ForegroundColor Gray
+
     Write-Host "  $($Global:Icons.Check) Archive Sync: Scanned=$($Stats.Scanned) Moved=$($Stats.Moved) Errors=$($Stats.Errors)" -ForegroundColor Green
 }
 
+# --- AUTO-RUN TRIGGER ---
 function Global:Invoke-RecipeOcr {
     param([string]$Source)
 
@@ -2037,6 +2175,7 @@ function Global:Invoke-RecipeOcr {
             continue
         }
 
+        # Run Tesseract OCR, output to temp txt
         $TempTxt = [IO.Path]::GetTempFileName()
         $TessCmd = "tesseract `"$($Img.FullName)`" `"$TempTxt`" -l eng"
         try {
@@ -2049,6 +2188,7 @@ function Global:Invoke-RecipeOcr {
         $RawText = Get-Content -Path $TempTxt -Raw
         Remove-Item $TempTxt -Force
 
+        # Very naive parsing: each line "Key: Value"
         $YamlObj = @{}
         foreach ($Line in $RawText -split "`n") {
             $trim = $Line.Trim()
@@ -2061,10 +2201,18 @@ function Global:Invoke-RecipeOcr {
 
         if ($YamlObj.Count -gt 0) {
             $YamlContent = $YamlObj | ConvertTo-Yaml
-            [System.IO.File]::WriteAllText($YamlPath, $YamlContent, [System.Text.UTF8Encoding]::new($false))
+            $YamlContent | Set-Content -Path $YamlPath -Encoding UTF8
             Write-Host "    $($Global:Icons.Check) OCR generated: $([IO.Path]::GetFileName($YamlPath))" -ForegroundColor Gray
         } else {
             Write-Host "    $($Global:Icons.Warning) OCR produced no parsable key/value for $($Img.Name)" -ForegroundColor Yellow
         }
     }
+}
+
+# --- AUTO-RUN TRIGGER ---
+if ($MyInvocation.MyCommand.Name -eq (Split-Path $PSCommandPath -Leaf) -or $null -eq $MyInvocation.Referrer) {
+    Start-SentinelSync
+}
+if ($MyInvocation.MyCommand.Name -eq (Split-Path $PSCommandPath -Leaf) -or $null -eq $MyInvocation.Referrer) {
+    Start-SentinelSync
 }

@@ -23,7 +23,7 @@ Settings: |-
       "DateFormat": "%Y/%m Month",
       "ChronoRegex": "^\\d{4}/\\d{2}\\s\\w+$",
       "EventRegex": "^([a-zA-Z0-9_\\-\\s]+[/\\])*[a-zA-Z0-9_\\-\\s]+$",
-      "PruneWebsite": true
+      "PruneWebsite": false
   }
 Root_Layout:
   GitHub_Repo: C:\Source\GEEK\Sentinel\sentinel-media-sync
@@ -88,17 +88,21 @@ FileTypes:
     - .mp4
     - .yml
 Locations:
+  - Name: 'SentinelUI'
+    Role: 'Dashboard'
+    Path: 'C:\Source\GEEK\Sentinel\UI_Engine'
+    SiteName: Source Studio UI_Engine
   - Name: Source Studio Engine
     Role: Website
     RootType: web-root
-    Path: C:\Source\GEEK\Sentinel\website
+    Path: C:\Source_Studio\website
     SitePath: C:\Source_Studio\website
     SitePathNetwork: L:\Recipes\Source_Studio\website
     UseNetworkPath: false
     SiteName: Source Studio
     SiteUrl: https://millerjohneric.asuscomm.com/docs
     TemplateDir: C:\Source\GEEK\Sentinel\sentinel-media-sync\templates
-    PurgeWebsite: true
+    PurgeWebsite: false
     PruneWebsite: true
     AutoStart: true
     NavigationUrls:
@@ -111,6 +115,19 @@ Locations:
         Url: https://millerjohneric.asuscomm.com:9000/ui/#/
       - Name: Buffalo LinkStation Config
         Url: https://millerjohneric.asuscomm.com:9443/login.html
+  - Name: jems-tones
+    Role: Website
+    RootType: web-gallery
+    WebSubFolder: docs/jems-tones
+    Path: L:\Photography_Hobby\jems-tones
+    GroupSeparator: -.-
+    Template: "[GALLERY]masonry-grid"
+    MonitorDepth: 99
+    SortDepth: null
+    Overwrite: false
+    PurgeOrphan: true
+    Structure:
+      - Event
   - Name: Culinary Cuisine
     Role: Website
     RootType: web-recipes
@@ -122,19 +139,6 @@ Locations:
     MonitorDepth: 99
     SortDepth: null
     Overwrite: true
-    PurgeOrphan: true
-    Structure:
-      - Event
-  - Name: jems-tones
-    Role: Website
-    RootType: web-gallery
-    WebSubFolder: docs/jems-tones
-    Path: L:\Photography_Hobby\jems-tones
-    GroupSeparator: -.-
-    Template: "[GALLERY]masonry-grid"
-    MonitorDepth: 99
-    SortDepth: null
-    Overwrite: false
     PurgeOrphan: true
     Structure:
       - Event
