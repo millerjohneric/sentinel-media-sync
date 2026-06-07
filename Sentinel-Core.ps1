@@ -2031,7 +2031,11 @@ foreach ($Loc in $PickupLocs) {
         $Sidecars = Get-ChildItem -Path $ArchiveLocs -Filter *.xmp -Recurse
         foreach ($S in $Sidecars) {
             try {
-                $Buddy = Get-SentinelBuddy -Sidecar $S -SearchRoot $Loc.Path -ErrorAction Stop
+                try {
+                        $Buddy = Get-SentinelBuddy -Sidecar $S -SearchRoot $Loc.Path -ErrorAction Stop
+                    } catch {
+                        Write-Warning "Failed to retrieve buddy file: $_"
+                    }
                 
                 # Check if the move is necessary
                 if ($Buddy.NeedsReunion) {
