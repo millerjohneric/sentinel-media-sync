@@ -1,35 +1,33 @@
 Project_Status:
-  Version: "17.8"
+  Version: '17.8'
   Codenames:
     Network: Source
     Machine: GEEK
-    Volume: "S:"
+    Volume: 'S:'
   DriveIcon: the-source.ico
-Settings: |-
-  "Settings": {
-      "SiteName": "Source Studio",
-      "RemoteUrl": "https://millerjohneric.asuscomm.com",
-      "LogPath": "_log",
-      "MonitorDepth": 3,
-      "DisableJunkPurge": true,
-      "DryRun": false,
-      "GlobalOverwrite": true,
-      "EmailSettings": {
-        "Enabled": true,
-        "To": "millerjohneric@gmail.com",
-        "CredPath": ".secure\\gmail.cred"
-      },
-      "DefaultYear": 2026,
-      "DateFormat": "%Y/%m Month",
-      "ChronoRegex": "^\\d{4}/\\d{2}\\s\\w+$",
-      "EventRegex": "^([a-zA-Z0-9_\\-\\s]+[/\\])*[a-zA-Z0-9_\\-\\s]+$",
-      "PruneWebsite": false
-  }
+Settings:
+  SiteName: 'Source Studio'
+  RemoteUrl: 'https://millerjohneric.asuscomm.com'
+  LogPath: '_log'
+  MonitorDepth: 3
+  DisableJunkPurge: true
+  DisableSidecarReunion: true
+  DryRun: false
+  GlobalOverwrite: true
+  EmailSettings:
+    Enabled: true
+    To: 'millerjohneric@gmail.com'
+    CredPath: '.secure\gmail.cred'
+  DefaultYear: 2026
+  DateFormat: '%Y/%m Month'
+  ChronoRegex: '^\d{4}/\d{2}\s\w+$'
+  EventRegex: '^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$'
+  PruneWebsite: false
 Root_Layout:
-  GitHub_Repo: C:\Source\GEEK\Sentinel\sentinel-media-sync
-  Data_Root: \\LS720DB34C\share\Source\GEEK
-  Network_Share: \\GEEK\Source
-  Mapped_Drive: S:\
+  GitHub_Repo: 'C:\Source\GEEK\Sentinel\sentinel-media-sync'
+  Data_Root: '\\LS720DB34C\share\Source\GEEK'
+  Network_Share: '\\GEEK\Source'
+  Mapped_Drive: 'S:\'
 FileTypes:
   Exclusions:
     - .webaxs
@@ -95,33 +93,33 @@ Locations:
   - Name: Source Studio Engine
     Role: Website
     RootType: web-root
-    Path: C:\Source_Studio\website
-    SitePath: C:\Source_Studio\website
-    SitePathNetwork: L:\Recipes\Source_Studio\website
+    Path: 'C:\Source_Studio\website'
+    SitePath: 'C:\Source_Studio\website'
+    SitePathNetwork: 'L:\Recipes\Source_Studio\website'
     UseNetworkPath: false
     SiteName: Source Studio
-    SiteUrl: https://millerjohneric.asuscomm.com/docs
-    TemplateDir: C:\Source\GEEK\Sentinel\sentinel-media-sync\templates
+    SiteUrl: 'https://millerjohneric.asuscomm.com/docs'
+    TemplateDir: 'C:\Source\GEEK\Sentinel\sentinel-media-sync\templates'
     PurgeWebsite: false
     PruneWebsite: true
     AutoStart: true
     NavigationUrls:
       - Name: Sentinel Admin
-        Url: https://millerjohneric.asuscomm.com:3005
+        Url: 'https://millerjohneric.asuscomm.com:3005'
         Local: false
       - Name: Router Admin
-        Url: https://millerjohneric.asuscomm.com:8443/Main_Login.asp
+        Url: 'https://millerjohneric.asuscomm.com:8443/Main_Login.asp'
       - Name: Buffalo WebAccess
-        Url: https://millerjohneric.asuscomm.com:9000/ui/#/
+        Url: 'https://millerjohneric.asuscomm.com:9000/ui/#/'
       - Name: Buffalo LinkStation Config
-        Url: https://millerjohneric.asuscomm.com:9443/login.html
+        Url: 'https://millerjohneric.asuscomm.com:9443/login.html'
   - Name: jems-tones
     Role: Website
     RootType: web-gallery
     WebSubFolder: docs/jems-tones
-    Path: L:\Photography_Hobby\jems-tones
+    Path: 'L:\Photography_Hobby\jems-tones'
     GroupSeparator: -.-
-    Template: "[GALLERY]masonry-grid"
+    Template: '[GALLERY]masonry-grid'
     MonitorDepth: 99
     SortDepth: null
     Overwrite: false
@@ -132,9 +130,9 @@ Locations:
     Role: Website
     RootType: web-recipes
     WebSubFolder: docs/culinary-cuisine
-    Path: L:\Recipes\culinary-cuisine
+    Path: 'L:\Recipes\culinary-cuisine'
     GroupSeparator: -.-
-    Template: "[RECIPES]recipe-card"
+    Template: '[RECIPES]recipe-card'
     OCR: false
     MonitorDepth: 99
     SortDepth: null
@@ -146,9 +144,9 @@ Locations:
     Role: Website
     RootType: web-shop
     WebSubFolder: docs/millermade-handcrafted
-    Path: L:\millermade-handcrafted\website
+    Path: 'L:\millermade-handcrafted\website'
     GroupSeparator: -.-
-    Template: "[SHOP]hand-crafted"
+    Template: '[SHOP]hand-crafted'
     MonitorDepth: 99
     SortDepth: null
     Overwrite: false
@@ -156,7 +154,7 @@ Locations:
     Structure:
       - Event
   - Name: timeline
-    Path: L:\Photo_Archive\timeline
+    Path: 'L:\Photo_Archive\timeline'
     Role: timeline
     MonitorDepth: 1
     SortDepth: 1
@@ -166,7 +164,7 @@ Locations:
       - Chrono
       - null
   - Name: Photography_RAW
-    Path: L:\Photography_Hobby\_RAW
+    Path: 'L:\Photography_Hobby\_RAW'
     Role: RAW_Archive
     MonitorDepth: 1
     SortDepth: 1
@@ -176,7 +174,7 @@ Locations:
       - Chrono
       - Event
   - Name: Shadow_Echoes
-    Path: L:\Photo_Archive\Shadow_Echoes
+    Path: 'L:\Photo_Archive\Shadow_Echoes'
     Role: InPlace_Archive
     MonitorDepth: 2
     PurgeOrphan: false
@@ -185,7 +183,7 @@ Locations:
       - Chrono
       - Event
   - Name: Visual_Registry
-    Path: L:\Photo_Archive\Visual_Registry
+    Path: 'L:\Photo_Archive\Visual_Registry'
     Role: InPlace_Archive
     MonitorDepth: 2
     PurgeOrphan: false
@@ -194,7 +192,7 @@ Locations:
       - Chrono
       - Event
   - Name: Legends
-    Path: L:\Photo_Archive\Legends
+    Path: 'L:\Photo_Archive\Legends'
     Role: InPlace_Archive
     MonitorDepth: 2
     PurgeOrphan: false
@@ -203,7 +201,7 @@ Locations:
       - Chrono
       - Event
   - Name: Videos
-    Path: L:\Movies_and_Videos\Videos
+    Path: 'L:\Movies_and_Videos\Videos'
     Role: Video_Archive
     MonitorDepth: 0
     SortDepth: 1
@@ -212,7 +210,7 @@ Locations:
     Structure:
       - Chrono
   - Name: Sonic_Discography
-    Path: L:\Music\Sonic_Discography
+    Path: 'L:\Music\Sonic_Discography'
     Role: Audio_Archive
     MonitorDepth: 0
     SortDepth: 1
@@ -221,7 +219,7 @@ Locations:
     Structure:
       - Chrono
   - Name: John
-    Path: L:\Sorting_Limbo\-in-box\John
+    Path: 'L:\Sorting_Limbo\-in-box\John'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -230,7 +228,7 @@ Locations:
     Structure:
       - Chrono
   - Name: Roena
-    Path: L:\Sorting_Limbo\-in-box\Roena
+    Path: 'L:\Sorting_Limbo\-in-box\Roena'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -239,7 +237,7 @@ Locations:
     Structure:
       - Chrono
   - Name: BigAssTablet
-    Path: L:\Sorting_Limbo\-in-box\BigAssTablet
+    Path: 'L:\Sorting_Limbo\-in-box\BigAssTablet'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -248,7 +246,7 @@ Locations:
     Structure:
       - Chrono
   - Name: Downloads
-    Path: L:\Sorting_Limbo\-in-box\Downloads
+    Path: 'L:\Sorting_Limbo\-in-box\Downloads'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -257,7 +255,7 @@ Locations:
     Structure:
       - Chrono
   - Name: CzurDoc
-    Path: C:\Users\mille\Documents\CzurDoc\sources
+    Path: 'C:\Users\mille\Documents\CzurDoc\sources'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -266,7 +264,7 @@ Locations:
     Structure:
       - Chrono
   - Name: SnippingTool
-    Path: C:\Users\mille\Pictures\SnippingTool
+    Path: 'C:\Users\mille\Pictures\SnippingTool'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
@@ -275,7 +273,16 @@ Locations:
     Structure:
       - Chrono
   - Name: ControlCenter4
-    Path: C:\Users\mille\Pictures\ControlCenter4\Scan
+    Path: 'C:\Users\mille\Pictures\ControlCenter4\Scan'
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: Nikon
+    Path: 'C:\Users\mille\Pictures\Nikon Transfer 2'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0
