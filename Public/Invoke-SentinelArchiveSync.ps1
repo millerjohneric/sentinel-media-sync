@@ -20,41 +20,20 @@ function Invoke-SentinelArchiveSync {
         }
     }
     
-    # Ensure $FileDate has a valid fallback before formatting
-    if (-not $FileDate) {
-        $FileDate = (Get-Date)
-    }
-
-    # Translate config format tokens into C#/.NET date patterns safely
-    $DotNetFormat = if ($ConfigFormat) {
-        $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
-    } else {
-        'yyyy/yyyy-MM MMMM'
-    }
-    
-    # Calculate path based on configuration format
-    $DateFolder = if ($DotNetFormat -match '/') {
-        $Parts = $DotNetFormat.Split('/', 2)
-        $YearPart = $FileDate.ToString($Parts[0])
-        $SubPart  = $FileDate.ToString($Parts[1])
-        Join-Path -Path $YearPart -ChildPath $SubPart
-    } else {
-        $FileDate.ToString($DotNetFormat)
-
     $DryRun   = $Settings.DryRun
     
-    # Force lowecase and leading dots on all input extensions
-    $ImgExts  = @($FileTypes.Images) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
-    $RawExts  = @($FileTypes.RAWs)   | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
-    $VidExts  = @($FileTypes.Videos) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
-    $AudExts  = @($FileTypes.Audio)  | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
-    $JunkList = $FileTypes.Junk
+    # Force lowercase and leading dots on all input extensions with safe array casting
+    $ImgExts  = @($FileTypes['Images']) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    $RawExts  = @($FileTypes['RAWs'])   | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    $VidExts  = @($FileTypes['Videos']) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    $AudExts  = @($FileTypes['Audio'])  | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    $JunkList = $FileTypes['Junk']
 
     # Fallback default image extensions if YAML hashtable failed to load Images key
     if (-not $ImgExts -or $ImgExts.Count -eq 0) {
-        $ImgExts = @('.png', '.jpg', '.jpeg', '.gif', '.bmp')
+        $ImgExts = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.heic')
     }
-}
+
     $SkipSidecars = $Settings.DisableSidecarReunion -eq $true -or $Settings.DisableSidecarReunion -eq 'true'
     $SkipJunk     = $Settings.DisableJunkPurge -eq $true -or $Settings.DisableJunkPurge -eq 'true'
 
@@ -79,15 +58,12 @@ function Invoke-SentinelArchiveSync {
             Write-Host "  $($Global:Icons.Warning) OFFLINE: $($Loc.Name)" -ForegroundColor DarkGray
             continue
         }
-        # DIAGNOSTIC CHECK
-        $RawFiles = Get-ChildItem -Path $Loc.Path -File -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "  -> Checking $($Loc.Name): Found $($RawFiles.Count) total raw files in path: $($Loc.Path)" -ForegroundColor Yellow
-
-        $Files = $RawFiles | Where-Object { $AllMedia -contains $_.Extension.ToLower() }
-        Write-Host "     After extension filter ($($AllMedia -join ', ')): Matched $($Files.Count) files." -ForegroundColor Yellow
+        
         # Added -Force to capture hidden/system screenshot files from SnippingTool
         $Files = Get-ChildItem -Path $Loc.Path -File -Recurse -Force -ErrorAction SilentlyContinue |
             Where-Object { $AllMedia -contains $_.Extension.ToLower() }
+            
+        Write-Host "  -> Checking $($Loc.Name): Found $(($Files).Count) matched files in path: $($Loc.Path)" -ForegroundColor Yellow
 
         $Total = $Files.Count
         $Count = 0
@@ -105,13 +81,18 @@ function Invoke-SentinelArchiveSync {
                 try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
                 catch { $File.CreationTime }
             } else { $File.CreationTime }
+            
             # Ensure $FileDate has a fallback if parsing failed
             if (-not $FileDate) {
                 $FileDate = $File.CreationTime
             }
 
-            # Translate config format tokens into C#/.NET date patterns
-            $DotNetFormat = $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
+            # Translate config format tokens into C#/.NET date patterns safely
+            $DotNetFormat = if ($ConfigFormat) {
+                $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
+            } else {
+                'yyyy/yyyy-MM MMMM'
+            }
             
             # If the format includes a slash, split it into Year and Subfolder parts
             if ($DotNetFormat -match '/') {
@@ -122,18 +103,7 @@ function Invoke-SentinelArchiveSync {
             } else {
                 $DateFolder = $FileDate.ToString($DotNetFormat)
             }
-            # Translate config format tokens into C#/.NET date patterns
-            $DotNetFormat = $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
-            
-            # If the format includes a slash, split it into Year and Subfolder parts
-            if ($DotNetFormat -match '/') {
-                $Parts = $DotNetFormat.Split('/', 2)
-                $YearPart = $FileDate.ToString($Parts[0])
-                $SubPart  = $FileDate.ToString($Parts[1])
-                $DateFolder = Join-Path -Path $YearPart -ChildPath $SubPart
-            } else {
-                $DateFolder = $FileDate.ToString($DotNetFormat)
-            }
+
             # Robust Target Root mapping with fallback defaults
             $TargetRoot = $null
             if ($RawExts -contains $Ext) { 
@@ -259,7 +229,21 @@ function Invoke-SentinelArchiveSync {
                         catch { $File.CreationTime }
                     } else { $File.CreationTime }
 
-                    $MonthFolder = Join-Path -Path $YearDir -ChildPath $FileDate.ToString('MM MMMM')
+                    # Translate config format tokens into C#/.NET date patterns safely for sorting phase
+                    $DotNetFormatSort = if ($ConfigFormat) {
+                        $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
+                    } else {
+                        'yyyy/yyyy-MM MMMM'
+                    }
+
+                    $SubFolderPath = if ($DotNetFormatSort -match '/') {
+                        $Parts = $DotNetFormatSort.Split('/', 2)
+                        $FileDate.ToString($Parts[1])
+                    } else {
+                        $FileDate.ToString($DotNetFormatSort)
+                    }
+
+                    $MonthFolder = Join-Path -Path $YearDir -ChildPath $SubFolderPath
 
                     if (-not $DryRun) {
                         try {
