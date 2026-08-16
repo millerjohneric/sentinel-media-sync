@@ -1,0 +1,17 @@
+---
+title: 'Public'
+sidebar_label: 'Public'
+sidebar_position: 0
+---
+
+# Public
+
+<div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:'1rem', padding:'1rem 0'}}>
+<a href='/docs/jems-tones/misc' style={{textDecoration:'none', color:'inherit'}}>
+  <div style={{border:'1px solid var(--card-border)', borderRadius:'10px', overflow:'hidden', background:'var(--card-bg)', transition:'transform 0.2s, box-shadow 0.2s'}} onMouseOver={e=>{e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow='0 6px 20px rgba(0,0,0,0.1)'}} onMouseOut={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow=''}}>
+    <img src={require('./_thumb_misc.jpg').default} alt='Misc' style={{width:'100%', height:'130px', objectFit:'cover'}} />
+    <div style={{padding:'0.6rem 0.8rem', fontWeight:500, fontSize:'0.9rem'}}>Misc</div>
+    <div style={{fontSize:'0.78rem', color:'var(--ifm-color-secondary)', padding:'0 0.6rem 0.6rem'}}>1 photos</div>
+  </div>
+</a>
+</div>

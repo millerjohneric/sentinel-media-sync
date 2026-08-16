@@ -19,7 +19,7 @@ Settings:
     To: 'millerjohneric@gmail.com'
     CredPath: '.secure\gmail.cred'
   DefaultYear: 2026
-  DateFormat: '%Y/%m Month'
+  DateFormat: '%Y/%Y-%m Month'
   ChronoRegex: '^\d{4}/\d{2}\s\w+$'
   EventRegex: '^([a-zA-Z0-9_\-\s]+[/\])*[a-zA-Z0-9_\-\s]+$'
   PruneWebsite: false
@@ -283,6 +283,15 @@ Locations:
       - Chrono
   - Name: Nikon
     Path: 'C:\Users\mille\Pictures\Nikon Transfer 2'
+    Role: Pickup
+    MonitorDepth: 99
+    SortDepth: 0
+    PurgeOrphan: false
+    Scope: Global
+    Structure:
+      - Chrono
+  - Name: SnippingTool
+    Path: 'C:\Users\mille\Pictures\SnippingTool'
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0

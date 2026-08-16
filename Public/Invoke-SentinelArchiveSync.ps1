@@ -10,18 +10,54 @@ function Invoke-SentinelArchiveSync {
         [Parameter(Mandatory = $true)]
         [hashtable]$Settings
     )
+    # Read configuration format settings dynamically
+    $ConfigPath = "C:\Source\GEEK\Sentinel\sentinel-media-sync\Sentinel-Config.yml"
+    $ConfigFormat = "YYYY/MM Month" # Default fallback
+    if (Test-Path -Path $ConfigPath) {
+        $ConfigRaw = Get-Content -Path $ConfigPath -Raw
+        if ($ConfigRaw -match 'DateFormat\s*:\s*[''"]?([^''"\r\n]+)[''"]?') {
+            $ConfigFormat = $Matches[1].Trim()
+        }
+    }
+    
+    # Ensure $FileDate has a valid fallback before formatting
+    if (-not $FileDate) {
+        $FileDate = (Get-Date)
+    }
+
+    # Translate config format tokens into C#/.NET date patterns safely
+    $DotNetFormat = if ($ConfigFormat) {
+        $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
+    } else {
+        'yyyy/yyyy-MM MMMM'
+    }
+    
+    # Calculate path based on configuration format
+    $DateFolder = if ($DotNetFormat -match '/') {
+        $Parts = $DotNetFormat.Split('/', 2)
+        $YearPart = $FileDate.ToString($Parts[0])
+        $SubPart  = $FileDate.ToString($Parts[1])
+        Join-Path -Path $YearPart -ChildPath $SubPart
+    } else {
+        $FileDate.ToString($DotNetFormat)
 
     $DryRun   = $Settings.DryRun
-    $ImgExts  = $FileTypes.Images
-    $RawExts  = $FileTypes.RAWs
-    $VidExts  = $FileTypes.Videos
-    $AudExts  = $FileTypes.Audio
+    
+    # Force lowecase and leading dots on all input extensions
+    $ImgExts  = @($FileTypes.Images) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
+    $RawExts  = @($FileTypes.RAWs)   | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
+    $VidExts  = @($FileTypes.Videos) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
+    $AudExts  = @($FileTypes.Audio)  | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { $_.ToLower() }
     $JunkList = $FileTypes.Junk
 
+    # Fallback default image extensions if YAML hashtable failed to load Images key
+    if (-not $ImgExts -or $ImgExts.Count -eq 0) {
+        $ImgExts = @('.png', '.jpg', '.jpeg', '.gif', '.bmp')
+    }
+}
     $SkipSidecars = $Settings.DisableSidecarReunion -eq $true -or $Settings.DisableSidecarReunion -eq 'true'
     $SkipJunk     = $Settings.DisableJunkPurge -eq $true -or $Settings.DisableJunkPurge -eq 'true'
 
-    # Exclude .xmp sidecars from routing when sidecar processing is disabled
     if ($SkipSidecars) {
         $AllMedia = $ImgExts + $RawExts + $VidExts + $AudExts
     } else {
@@ -43,8 +79,14 @@ function Invoke-SentinelArchiveSync {
             Write-Host "  $($Global:Icons.Warning) OFFLINE: $($Loc.Name)" -ForegroundColor DarkGray
             continue
         }
+        # DIAGNOSTIC CHECK
+        $RawFiles = Get-ChildItem -Path $Loc.Path -File -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "  -> Checking $($Loc.Name): Found $($RawFiles.Count) total raw files in path: $($Loc.Path)" -ForegroundColor Yellow
 
-        $Files = Get-ChildItem -Path $Loc.Path -File -Recurse -ErrorAction SilentlyContinue |
+        $Files = $RawFiles | Where-Object { $AllMedia -contains $_.Extension.ToLower() }
+        Write-Host "     After extension filter ($($AllMedia -join ', ')): Matched $($Files.Count) files." -ForegroundColor Yellow
+        # Added -Force to capture hidden/system screenshot files from SnippingTool
+        $Files = Get-ChildItem -Path $Loc.Path -File -Recurse -Force -ErrorAction SilentlyContinue |
             Where-Object { $AllMedia -contains $_.Extension.ToLower() }
 
         $Total = $Files.Count
@@ -55,25 +97,69 @@ function Invoke-SentinelArchiveSync {
             $Count++
             $Ext = $File.Extension.ToLower()
 
-            if (Test-SentinelExclusion -FullPath $File.FullName) { continue }
+            if (Get-Command -Name Test-SentinelExclusion -ErrorAction SilentlyContinue) {
+                if (Test-SentinelExclusion -FullPath $File.FullName) { continue }
+            }
 
             $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
                 try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
                 catch { $File.CreationTime }
             } else { $File.CreationTime }
+            # Ensure $FileDate has a fallback if parsing failed
+            if (-not $FileDate) {
+                $FileDate = $File.CreationTime
+            }
 
-            $DateFolder = Join-Path -Path $FileDate.ToString('yyyy') -ChildPath $FileDate.ToString('MM MMMM')
-
+            # Translate config format tokens into C#/.NET date patterns
+            $DotNetFormat = $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
+            
+            # If the format includes a slash, split it into Year and Subfolder parts
+            if ($DotNetFormat -match '/') {
+                $Parts = $DotNetFormat.Split('/', 2)
+                $YearPart = $FileDate.ToString($Parts[0])
+                $SubPart  = $FileDate.ToString($Parts[1])
+                $DateFolder = Join-Path -Path $YearPart -ChildPath $SubPart
+            } else {
+                $DateFolder = $FileDate.ToString($DotNetFormat)
+            }
+            # Translate config format tokens into C#/.NET date patterns
+            $DotNetFormat = $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
+            
+            # If the format includes a slash, split it into Year and Subfolder parts
+            if ($DotNetFormat -match '/') {
+                $Parts = $DotNetFormat.Split('/', 2)
+                $YearPart = $FileDate.ToString($Parts[0])
+                $SubPart  = $FileDate.ToString($Parts[1])
+                $DateFolder = Join-Path -Path $YearPart -ChildPath $SubPart
+            } else {
+                $DateFolder = $FileDate.ToString($DotNetFormat)
+            }
+            # Robust Target Root mapping with fallback defaults
             $TargetRoot = $null
-            if ($RawExts -contains $Ext) { $TargetRoot = $RawLoc?.Path }
-            elseif ($VidExts -contains $Ext) { $TargetRoot = $VideoLoc?.Path }
-            elseif ($AudExts -contains $Ext) { $TargetRoot = $AudioLoc?.Path }
-            elseif ($ImgExts -contains $Ext -or (-not $SkipSidecars -and $Ext -eq '.xmp')) { $TargetRoot = $TimelineLoc?.Path }
+            if ($RawExts -contains $Ext) { 
+                $TargetRoot = $RawLoc?.Path 
+            }
+            elseif ($VidExts -contains $Ext) { 
+                $TargetRoot = $VideoLoc?.Path 
+            }
+            elseif ($AudExts -contains $Ext) { 
+                $TargetRoot = $AudioLoc?.Path 
+            }
+            
+            # Fallback for Images and Sidecars: Default to timeline path if Role search missed it
+            if ([string]::IsNullOrWhiteSpace($TargetRoot) -and ($ImgExts -contains $Ext -or $Ext -eq '.xmp')) {
+                $TargetRoot = if ($TimelineLoc?.Path) { $TimelineLoc.Path } else { "L:\Photo_Archive\timeline" }
+            }
 
             if ([string]::IsNullOrWhiteSpace($TargetRoot)) { continue }
 
             $Destination = Join-Path -Path $TargetRoot -ChildPath $DateFolder
-            Write-SentinelOdometer -Tag "ROUTE" -Source $Loc.Name -Path $File.Name -Current $Count -Total $Total
+
+            if (Get-Command -Name Write-SentinelOdometer -ErrorAction SilentlyContinue) {
+                Write-SentinelOdometer -Tag "ROUTE" -Source $Loc.Name -Path $File.Name -Destination $Destination -Current $Count -Total $Total
+            } else {
+                Write-Host "  -> [$Count/$Total] $($File.Name) => $Destination" -ForegroundColor Gray
+            }
 
             if (-not $DryRun) {
                 try {
@@ -99,22 +185,25 @@ function Invoke-SentinelArchiveSync {
             if (-not (Test-Path -Path $ArchiveLoc.Path)) { continue }
 
             Write-Host "    $($Global:Icons.Arrow) Scanning sidecars in: $($ArchiveLoc.Name)" -ForegroundColor DarkGray
-            $Sidecars = Get-ChildItem -Path $ArchiveLoc.Path -Filter *.xmp -Recurse -ErrorAction SilentlyContinue
+            $Sidecars = Get-ChildItem -Path $ArchiveLoc.Path -Filter *.xmp -Recurse -Force -ErrorAction SilentlyContinue
             $TotalSidecars = $Sidecars.Count
             $CurrentSidecar = 0
 
             foreach ($S in $Sidecars) {
                 $CurrentSidecar++
-                Write-SentinelOdometer -Tag "REUNITE" -Source $ArchiveLoc.Name -Path $S.Name -Current $CurrentSidecar -Total $TotalSidecars
+                if (Get-Command -Name Write-SentinelOdometer -ErrorAction SilentlyContinue) {
+                    Write-SentinelOdometer -Tag "REUNITE" -Source $ArchiveLoc.Name -Path $S.Name -Current $CurrentSidecar -Total $TotalSidecars
+                }
 
                 try {
-                    $Buddy = Get-SentinelBuddy -Sidecar $S -SearchRoot $ArchiveLoc.Path -ErrorAction Stop
-                    
-                    if ($Buddy -and $Buddy.NeedsReunion) {
-                        if (-not $DryRun) {
-                            Move-Item -Path $S.FullName -Destination $Buddy.Target -Force -ErrorAction Stop
+                    if (Get-Command -Name Get-SentinelBuddy -ErrorAction SilentlyContinue) {
+                        $Buddy = Get-SentinelBuddy -Sidecar $S -SearchRoot $ArchiveLoc.Path -ErrorAction Stop
+                        if ($Buddy -and $Buddy.NeedsReunion) {
+                            if (-not $DryRun) {
+                                Move-Item -Path $S.FullName -Destination $Buddy.Target -Force -ErrorAction Stop
+                            }
+                            $Stats.Reunited++
                         }
-                        $Stats.Reunited++
                     }
                 }
                 catch {
@@ -136,7 +225,7 @@ function Invoke-SentinelArchiveSync {
         $JunkCount = 0
         foreach ($Loc in $ArchiveLocs) {
             if (-not (Test-Path -Path $Loc.Path)) { continue }
-            Get-ChildItem -Path $Loc.Path -Recurse -File -ErrorAction SilentlyContinue |
+            Get-ChildItem -Path $Loc.Path -Recurse -File -Force -ErrorAction SilentlyContinue |
                 Where-Object { $JunkList -contains $_.Name } |
                 ForEach-Object {
                     if (-not $DryRun) {
@@ -159,7 +248,7 @@ function Invoke-SentinelArchiveSync {
             Where-Object { $_.Name -match '^\d{4}$' } |
             ForEach-Object {
                 $YearDir = $_.FullName
-                $LooseFiles = Get-ChildItem -Path $YearDir -File -ErrorAction SilentlyContinue
+                $LooseFiles = Get-ChildItem -Path $YearDir -File -Force -ErrorAction SilentlyContinue
 
                 foreach ($File in $LooseFiles) {
                     $Ext = $File.Extension.ToLower()
