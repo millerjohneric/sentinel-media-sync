@@ -5,16 +5,10 @@ cmake-build-*/
 out/
 
 # === Sentinel Media Sync Logs ===
-/Sentinel_Session.log
+move-log*.txt
+errors.txt
 
 # === System & OS Files ===
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# === Secret PII ===
-/.secure/
-/Archive/
-/True/
-/_log/
-/_Archive/

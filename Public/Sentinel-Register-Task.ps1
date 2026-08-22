@@ -1,12 +1,17 @@
 # ==============================================================================
 # SCRIPT: Sentinel-Register-Task.ps1
 # ==============================================================================
+
 $TaskName = "SentinelMediaSync"
 $ScriptFolder = $PSScriptRoot
-$ScriptPath = Join-Path $ScriptFolder "Sentinel Media Sync.ps1"
+$ScriptPath = Join-Path $ScriptFolder "Start-SentinelSync.ps1"
 $XmlPath = Join-Path $ScriptFolder "Sentinel-Daily-Deployment.xml"
-([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
-Get-ScheduledTask -TaskName "SentinelMediaSync" -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+
+# Ensure running as Administrator
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Error "MISSION ABORTED: This script must be run with Administrator privileges."
+    return
+}
 
 if (-not (Test-Path $XmlPath)) {
     Write-Host "ERROR: Could not find XML at $XmlPath" -ForegroundColor Red
@@ -22,15 +27,18 @@ $taskXml.Task.Actions.Exec.WorkingDirectory = "$ScriptFolder"
 $TempXml = Join-Path $env:TEMP "SentinelTempTask.xml"
 $taskXml.Save($TempXml)
 
-# Register the Task
-Register-ScheduledTask -Xml (Get-Content $TempXml | Out-String) -TaskName $TaskName -Force
+# Clean up existing task if present
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+}
 
+# Register the Task
 try {
-    Register-ScheduledTask -Xml (Get-Content $TempXml | Out-String) -TaskName "SentinelMediaSync" -ErrorAction Stop
+    Register-ScheduledTask -Xml (Get-Content $TempXml | Out-String) -TaskName $TaskName -ErrorAction Stop
     Write-Host "MISSION SUCCESSFUL" -ForegroundColor Cyan
-    Write-Host "Task '$TaskName' registered to run daily at 02:00 AM."
+    Write-Host "Task '$TaskName' registered successfully."
 } catch {
     Write-Error "Task registration failed: $_"
 }
-Write-Host "Script Target: $ScriptPath"
 
+Write-Host "Script Target: $ScriptPath"

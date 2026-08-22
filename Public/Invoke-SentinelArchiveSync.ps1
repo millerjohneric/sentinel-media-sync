@@ -87,22 +87,13 @@ function Invoke-SentinelArchiveSync {
                 $FileDate = $File.CreationTime
             }
 
-            # Translate config format tokens into C#/.NET date patterns safely
-            $DotNetFormat = if ($ConfigFormat) {
-                $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
-            } else {
-                'yyyy/yyyy-MM MMMM'
-            }
+            # Translate config format tokens into C#/.NET date patterns safely, preserving your exact folder layout style
+            $YearPart  = $FileDate.ToString('yyyy')
+            $MonthNum  = $FileDate.ToString('MM')
+            $MonthName = $FileDate.ToString('MMMM')
             
-            # If the format includes a slash, split it into Year and Subfolder parts
-            if ($DotNetFormat -match '/') {
-                $Parts = $DotNetFormat.Split('/', 2)
-                $YearPart = $FileDate.ToString($Parts[0])
-                $SubPart  = $FileDate.ToString($Parts[1])
-                $DateFolder = Join-Path -Path $YearPart -ChildPath $SubPart
-            } else {
-                $DateFolder = $FileDate.ToString($DotNetFormat)
-            }
+            $SubPart    = "$YearPart-$MonthNum $MonthName"
+            $DateFolder = Join-Path -Path $YearPart -ChildPath $SubPart
 
             # Robust Target Root mapping with fallback defaults
             $TargetRoot = $null
@@ -229,21 +220,10 @@ function Invoke-SentinelArchiveSync {
                         catch { $File.CreationTime }
                     } else { $File.CreationTime }
 
-                    # Translate config format tokens into C#/.NET date patterns safely for sorting phase
-                    $DotNetFormatSort = if ($ConfigFormat) {
-                        $ConfigFormat -replace '%Y', 'yyyy' -replace '%m', 'MM' -replace '%d', 'dd' -replace '%B', 'MMMM'
-                    } else {
-                        'yyyy/yyyy-MM MMMM'
-                    }
-
-                    $SubFolderPath = if ($DotNetFormatSort -match '/') {
-                        $Parts = $DotNetFormatSort.Split('/', 2)
-                        $FileDate.ToString($Parts[1])
-                    } else {
-                        $FileDate.ToString($DotNetFormatSort)
-                    }
-
-                    $MonthFolder = Join-Path -Path $YearDir -ChildPath $SubFolderPath
+                    $YearPart  = $FileDate.ToString('yyyy')
+                    $MonthNum  = $FileDate.ToString('MM')
+                    $MonthName = $FileDate.ToString('MMMM')
+                    $MonthFolder = Join-Path -Path $YearDir -ChildPath "$YearPart-$MonthNum $MonthName"
 
                     if (-not $DryRun) {
                         try {

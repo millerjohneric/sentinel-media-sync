@@ -1,4 +1,12 @@
-$YamlData = Get-Content 'sentinel-media-sync\Sentinel-Config.yml' -Raw | ConvertFrom-Yaml
+$ModuleRoot = Split-Path $PSScriptRoot -Parent
+$ConfigPath = Join-Path $ModuleRoot "Sentinel-Config.yml"
+
+if (-not (Test-Path $ConfigPath)) {
+    Write-Warning "Configuration file not found at path: $ConfigPath"
+    return
+}
+
+$YamlData = Get-Content $ConfigPath -Raw
 $SiteName = if ($YamlData.Settings.SiteName) { $YamlData.Settings.SiteName } else { "Source Studio" }
 $Modules  = $YamlData.Locations | Where-Object { $_.Role -eq 'Website' -and $_.RootType -ne 'web-root' }
 

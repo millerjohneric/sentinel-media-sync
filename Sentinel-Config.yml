@@ -6,9 +6,9 @@ Project_Status:
     Volume: 'S:'
   DriveIcon: the-source.ico
 Settings:
-  SiteName: 'Source Studio'
-  RemoteUrl: 'https://millerjohneric.asuscomm.com'
-  LogPath: '_log'
+  SiteName: "Source Studio"
+  RemoteUrl: "https://millerjohneric.asuscomm.com"
+  LogPath: "_log"
   MonitorDepth: 3
   DisableJunkPurge: true
   DisableSidecarReunion: true
@@ -16,7 +16,7 @@ Settings:
   GlobalOverwrite: true
   EmailSettings:
     Enabled: true
-    To: 'millerjohneric@gmail.com'
+    To: "millerjohneric@gmail.com"
     CredPath: '.secure\gmail.cred'
   DefaultYear: 2026
   DateFormat: '%Y/%Y-%m Month'

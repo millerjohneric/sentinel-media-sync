@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = (Join-Path -Path $PSScriptRoot -ChildPath 'Sentinel-Config.yml')
+    [string]$ConfigPath = (Join-Path -Path $(if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }) -ChildPath 'Sentinel-Config.yml')
 )
 
 Set-Location -Path $PSScriptRoot
