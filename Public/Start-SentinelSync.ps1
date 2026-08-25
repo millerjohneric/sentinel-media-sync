@@ -19,21 +19,43 @@ function Start-SentinelSync {
 
         Write-Host "Running Sentinel Sync using config: $ConfigPath" -ForegroundColor Cyan
 
-        # 1. Update Docusaurus configurations & generate sidebars
-        # (Add your core processing steps here)
-        
-        # 2. Package Sentinel Suite for transport
-        $BackupZip = "$env:USERPROFILE\Desktop\Sentinel_v9.1_Backup.zip"
-        Write-Host "Packing Sentinel Suite for transport..." -ForegroundColor Cyan
-        # Compress-Archive ... (ensure your archival code points here if needed)
-        Write-Host "MISSION PACKED: Check your Desktop for Sentinel_v9.1_Backup.zip" -ForegroundColor Green
+        if (-not (Get-Command -Name ConvertFrom-Yaml -ErrorAction SilentlyContinue)) {
+            Write-Error "ConvertFrom-Yaml cmdlet not found. Ensure powershell-yaml module is installed."
+            return
+        }
 
-        # 3. Register Scheduled Task (Keeping it registered, no removal!)
+        $Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
+
+        # Package Sentinel Suite for transport (if enabled in config)
+        if ($Config.Settings.EnableTransportBackup -eq $true) {
+            $BackupZip = "$env:USERPROFILE\Desktop\Sentinel_v9.1_Backup.zip"
+            Write-Host "`nPacking Sentinel Suite for transport..." -ForegroundColor Cyan
+            if (Test-Path "$PSScriptRoot\..") {
+                Compress-Archive -Path "$PSScriptRoot\.." -DestinationPath $BackupZip -Force -ErrorAction SilentlyContinue
+                Write-Host "MISSION PACKED: Check your Desktop for Sentinel_v9.1_Backup.zip" -ForegroundColor Green
+            }
+        }
+
+        # Register Scheduled Task using the master runner script
         $TaskName = "SentinelMediaSync"
-        $ScriptTarget = "$PSScriptRoot\Start-SentinelSync.ps1"
+        $ScriptTarget = "C:\Source\GEEK\Sentinel\sentinel-media-sync\Run-Sentinel.ps1"
         
-        # Register or update the task as Ready
-        Write-Host "MISSION SUCCESSFUL" -ForegroundColor Green
-        Write-Host "Task '$TaskName' registered successfully." -ForegroundColor Cyan
+        $Action = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptTarget`""
+        $Trigger = New-ScheduledTaskTrigger -Daily -At 12:00AM
+
+        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+        if ($isAdmin) {
+            try {
+                Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName $TaskName -Description 'Daily synchronization for The Source media archives.' -Force -ErrorAction Stop | Out-Null
+                Write-Host "MISSION SUCCESSFUL" -ForegroundColor Green
+                Write-Host "Task '$TaskName' registered successfully." -ForegroundColor Cyan
+            }
+            catch {
+                Write-Host "WARNING: Could not auto-register scheduled task. Details: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "NOTICE: Scheduled task registration skipped (Administrator privileges required)." -ForegroundColor Yellow
+        }
     }
 }

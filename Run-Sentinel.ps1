@@ -39,10 +39,16 @@ if (-not (Test-Path -Path $ConfigPath)) {
 Write-Host "Using Configuration: $ConfigPath" -ForegroundColor Cyan
 Write-Host "Loading Sentinel Private & Public Functions..." -ForegroundColor Cyan
 
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
 # Manually dot-source functions to avoid module nesting traps
 $PublicDir = Join-Path -Path $PSScriptRoot -ChildPath 'Public'
 if (Test-Path $PublicDir) {
     foreach ($script in (Get-ChildItem -Path $PublicDir -Filter "*.ps1")) {
+        if (-not $isAdmin -and $script.Name -eq 'Sentinel-Register-Task.ps1') {
+            Write-Host "NOTICE: Skipping $($script.Name) (Administrator privileges required)." -ForegroundColor Yellow
+            continue
+        }
         . $script.FullName
     }
 }
@@ -157,12 +163,14 @@ if (Get-Command -Name Invoke-SentinelArchiveSync -ErrorAction SilentlyContinue) 
 # 3. PACKAGING & SCHEDULED TASK REGISTRATION
 # ==============================================================================
 
-# Package Sentinel Suite for transport
-$BackupZip = "$env:USERPROFILE\Desktop\Sentinel_v9.1_Backup.zip"
-Write-Host "`nPacking Sentinel Suite for transport..." -ForegroundColor Cyan
-if (Test-Path "$PSScriptRoot\..") {
-    Compress-Archive -Path "$PSScriptRoot\.." -DestinationPath $BackupZip -Force -ErrorAction SilentlyContinue
-    Write-Host "MISSION PACKED: Check your Desktop for Sentinel_v9.1_Backup.zip" -ForegroundColor Green
+# Package Sentinel Suite for transport (if enabled in config)
+if ($Config.Settings.EnableTransportBackup -eq $true) {
+    $BackupZip = "$env:USERPROFILE\Desktop\Sentinel_v9.1_Backup.zip"
+    Write-Host "`nPacking Sentinel Suite for transport..." -ForegroundColor Cyan
+    if (Test-Path "$PSScriptRoot\..") {
+        Compress-Archive -Path "$PSScriptRoot\.." -DestinationPath $BackupZip -Force -ErrorAction SilentlyContinue
+        Write-Host "MISSION PACKED: Check your Desktop for Sentinel_v9.1_Backup.zip" -ForegroundColor Green
+    }
 }
 
 # Register Scheduled Task
@@ -171,11 +179,17 @@ $ScriptTarget = "$PSScriptRoot\Run-Sentinel.ps1"
 $Action = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptTarget`""
 $Trigger = New-ScheduledTaskTrigger -Daily -At 12:00AM
 
-try {
-    Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName $TaskName -Description 'Daily synchronization for The Source media archives.' -Force -ErrorAction Stop | Out-Null
-    Write-Host "MISSION SUCCESSFUL" -ForegroundColor Green
-    Write-Host "Task '$TaskName' registered successfully." -ForegroundColor Cyan
-}
-catch {
-    Write-Host "WARNING: Could not auto-register scheduled task. Details: $($_.Exception.Message)" -ForegroundColor Yellow
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if ($isAdmin) {
+    try {
+        Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName $TaskName -Description 'Daily synchronization for The Source media archives.' -Force -ErrorAction Stop | Out-Null
+        Write-Host "MISSION SUCCESSFUL" -ForegroundColor Green
+        Write-Host "Task '$TaskName' registered successfully." -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host "WARNING: Could not auto-register scheduled task. Details: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "NOTICE: Scheduled task registration skipped (Administrator privileges required)." -ForegroundColor Yellow
 }

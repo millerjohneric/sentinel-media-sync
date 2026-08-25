@@ -11,8 +11,12 @@ function Global:Invoke-RecipeOcr {
     foreach ($Img in $ImageFiles) {
         $YamlPath = [IO.Path]::ChangeExtension($Img.FullName, ".yml")
         if (Test-Path $YamlPath) {
-            Write-Host "    $($Global:Icons.Check) OCR skipped (YAML exists): $($Img.Name)" -ForegroundColor Gray
+            $msg = "`r    $($Global:Icons.Check) OCR skipped (YAML exists): $($Img.Name)"
+            Write-Host ("{0,-100}" -f $msg) -NoNewline -ForegroundColor Gray
             continue
+        } else {
+            # Force a newline the moment we hit a file that actually processes/fails
+            Write-Host ""
         }
 
         # Tesseract automatically appends '.txt' to the output base filename

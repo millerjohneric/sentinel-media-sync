@@ -1,5 +1,5 @@
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
-$Path = Join-Path $ProjectRoot "Sentinel-Core.ps1"
+$Path = Join-Path $ProjectRoot "Run-Sentinel.ps1"
 $content = Get-Content $Path -Raw
 $tokens = $null
 $errors = $null

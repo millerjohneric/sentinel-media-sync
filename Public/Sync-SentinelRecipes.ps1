@@ -1,3 +1,6 @@
+# Ensure powershell-yaml is available at the top of your script
+Import-Module powershell-yaml -ErrorAction Stop
+
 function Global:Sync-SentinelRecipes {
     [CmdletBinding()]
     param(
@@ -29,42 +32,78 @@ function Global:Sync-SentinelRecipes {
             New-Item -Path $GroupDocsPath -ItemType Directory -Force | Out-Null
         }
 
-        $RecipeFiles = Get-ChildItem -Path $Group.FullName -Filter *.md -Recurse -ErrorAction SilentlyContinue
+        $RecipeFiles = Get-ChildItem -Path $Group.FullName -Filter "*.md" -Recurse -ErrorAction SilentlyContinue
         foreach ($File in $RecipeFiles) {
             $DestFile = Join-Path -Path $GroupDocsPath -ChildPath $File.Name
             Copy-Item -Path $File.FullName -Destination $DestFile -Force
         }
     }
 
-    $AdminMarkup = @"
+    # 1. Ensure Root Index File Exists
+    $RootIndexPath = Join-Path -Path $DocsPath -ChildPath 'index.md'
+    if (-not (Test-Path -Path $RootIndexPath)) {
+        $AdminMarkup = @"
 ---
-title: Recipe Index
+title: 'Recipe Index'
 sidebar_position: 1
 ---
 
 # Recipe Collection
 Welcome to the Sentinel recipe archive.
 "@
+        [System.IO.File]::WriteAllText($RootIndexPath, $AdminMarkup, [System.Text.UTF8Encoding]::new($false))
+    }
 
-    $IndexPath = Join-Path -Path $DocsPath -ChildPath 'index.md'
-    [System.IO.File]::WriteAllText($IndexPath, $AdminMarkup, [System.Text.UTF8Encoding]::new($false))
+    # 2. Auto-create subfolder index files if missing
+    $AllDirectories = Get-ChildItem -Path $DocsPath -Directory -Recurse -ErrorAction SilentlyContinue
+    foreach ($Dir in $AllDirectories) {
+        $SubIndexPath = Join-Path -Path $Dir.FullName -ChildPath 'index.md'
+        $SubIndexMdxPath = Join-Path -Path $Dir.FullName -ChildPath 'index.mdx'
 
-    $PageCount = 0
-    $DirsToIndex = Get-ChildItem -Path $DocsPath -Directory -ErrorAction SilentlyContinue
+        if (-not (Test-Path -Path $SubIndexPath) -and -not (Test-Path -Path $SubIndexMdxPath)) {
+            $DirTitle = $Dir.Name -replace '[-_]', ' '
+            $DirIndexMarkup = @"
+---
+title: '$DirTitle'
+---
 
-    foreach ($Dir in $DirsToIndex) {
-        $SubDirs = Get-ChildItem -Path $Dir.FullName -Directory -ErrorAction SilentlyContinue
-        
-        $DocBasePath = if ($SubDirs.Count -gt 0) {
-            $Dir.Name
-        } else {
-            'recipes'
-        }
-
-        foreach ($Sub in $SubDirs) {
-            $PageCount++
+# $DirTitle
+"@
+            [System.IO.File]::WriteAllText($SubIndexPath, $DirIndexMarkup, [System.Text.UTF8Encoding]::new($false))
         }
     }
 
+    # 3. Patch Front Matter & JS Functions Across All MD/MDX Files
+    $AllMdxFiles = Get-ChildItem -Path $DocsPath -Include "*.mdx", "*.md" -Recurse -ErrorAction SilentlyContinue
+    foreach ($MdxFile in $AllMdxFiles) {
+        $Content = Get-Content -Path $MdxFile.FullName -Raw
+        $HasFrontMatter = $Content -match '(?s)^\s*---\r?\n.*?\r?\n---'
+
+        if ($HasFrontMatter) {
+            $FrontMatterRaw = [regex]::Match($Content, '(?s)^\s*---\r?\n(.*?)\r?\n---').Groups[1].Value
+            $BodyContent = $Content -replace '(?s)^\s*---\r?\n.*?\r?\n---', ''
+
+            try {
+                $YamlData = ConvertFrom-Yaml $FrontMatterRaw
+                if ($YamlData -is [hashtable] -or $YamlData -is [System.Collections.IDictionary]) {
+                    if ($YamlData.ContainsKey('id')) {
+                        $YamlData.Remove('id')
+                    }
+                    $NewYaml = ConvertTo-Yaml $YamlData
+                    $Content = "---`n$NewYaml---`n" + $BodyContent.TrimStart()
+                }
+            } catch {
+                $Content = ($Content -replace '(?m)^id:\s*[''"]?.*?\r?\n', '')
+            }
+        }
+
+        if ($Content -match '(?m)^(?!export\s+)function\s+') {
+            $Content = $Content -replace '(?m)^(?!export\s+)function\s+', 'export function '
+        }
+
+        [System.IO.File]::WriteAllText($MdxFile.FullName, $Content, [System.Text.UTF8Encoding]::new($false))
+    }
+
+    $PageCount = $AllMdxFiles.Count
     Write-Host "  $($Global:Icons.Check) Recipes synced. Total pages processed: $PageCount" -ForegroundColor Green
 }
