@@ -1,4 +1,4 @@
-function Invoke-SentinelArchiveSync {
+function Global:Invoke-SentinelArchiveSync {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -25,10 +25,16 @@ function Invoke-SentinelArchiveSync {
     # Force lowercase and leading dots on all input extensions with safe array casting
     $ImgExts  = @($FileTypes['Images']) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
     $RawExts  = @($FileTypes['RAWs'])   | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
-    $VidExts  = @($FileTypes['Videos']) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
     $AudExts  = @($FileTypes['Audio'])  | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
     $JunkList = $FileTypes['Junk']
+    $VideoKeys = @('Videos', 'Video', 'Vid')
+    $VideoRaw  = foreach ($k in $VideoKeys) { if ($FileTypes[$k]) { $FileTypes[$k] } }
+    $VidExts   = @($VideoRaw) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
 
+    # Hardcoded fallback if YAML definitions fail to load
+    if (-not $VidExts -or $VidExts.Count -eq 0) {
+        $VidExts = @('.mp4', '.mov', '.avi', '.mkv', '.m4v', '.wmv')
+    }
     # Fallback default image extensions if YAML hashtable failed to load Images key
     if (-not $ImgExts -or $ImgExts.Count -eq 0) {
         $ImgExts = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.heic')
@@ -124,14 +130,31 @@ function Invoke-SentinelArchiveSync {
 
             if (-not $DryRun) {
                 try {
-                    if (-not (Test-Path -Path $Destination)) { New-Item -Path $Destination -ItemType Directory -Force | Out-Null }
-                    $DestFile = Join-Path -Path $Destination -ChildPath $File.Name
-                    if (-not (Test-Path -Path $DestFile)) {
-                        Move-Item -Path $File.FullName -Destination $Destination -Force -ErrorAction Stop
-                        $Stats.Moved++
+                    if (-not (Test-Path -Path $Destination)) { 
+                        New-Item -Path $Destination -ItemType Directory -Force | Out-Null 
                     }
+                    
+                    $TargetFile = Join-Path -Path $Destination -ChildPath $File.Name
+                    
+                    # If destination file already exists, generate a non-conflicting filename
+                    if (Test-Path -Path $TargetFile) {
+                        $BaseName  = [System.IO.Path]::GetFileNameWithoutExtension($File.Name)
+                        $Extension = [System.IO.Path]::GetExtension($File.Name)
+                        $Counter   = 1
+                        
+                        while (Test-Path -Path $TargetFile) {
+                            $NewName    = "${BaseName}_${Counter}${Extension}"
+                            $TargetFile = Join-Path -Path $Destination -ChildPath $NewName
+                            $Counter++
+                        }
+                    }
+                    
+                    Move-Item -Path $File.FullName -Destination $TargetFile -Force -ErrorAction Stop
+                    $Stats.Moved++
+                    
                 } catch {
                     $Stats.Errors++
+                    Write-Host "`n  $($Global:Icons.Error) Failed to move '$($File.Name)': $($_.Exception.Message)" -ForegroundColor Red
                 }
             }
         }
@@ -153,7 +176,7 @@ function Invoke-SentinelArchiveSync {
             foreach ($S in $Sidecars) {
                 $CurrentSidecar++
                 if (Get-Command -Name Write-SentinelOdometer -ErrorAction SilentlyContinue) {
-                    Write-SentinelOdometer -Tag "REUNITE" -Source $ArchiveLoc.Name -Path $S.Name -Current $CurrentSidecar -Total $TotalSidecars
+                    Write-SentinelOdometer -Tag "REUNITE" -Source $ArchiveLoc.Name -Path $S.Name -Destination "" -Current $CurrentSidecar -Total $TotalSidecars
                 }
 
                 try {
@@ -182,19 +205,7 @@ function Invoke-SentinelArchiveSync {
 
     # --- JUNK PURGE PHASE ---
     if (-not $SkipJunk -and $JunkList) {
-        Write-Host "  $($Global:Icons.Arrow) Purging junk files..." -ForegroundColor Gray
-        $JunkCount = 0
-        foreach ($Loc in $ArchiveLocs) {
-            if (-not (Test-Path -Path $Loc.Path)) { continue }
-            Get-ChildItem -Path $Loc.Path -Recurse -File -Force -ErrorAction SilentlyContinue |
-                Where-Object { $JunkList -contains $_.Name } |
-                ForEach-Object {
-                    if (-not $DryRun) {
-                        try { Remove-Item -Path $_.FullName -Force -ErrorAction Stop; $JunkCount++; $Stats.Purged++ } catch {}
-                    }
-                }
-        }
-        Write-Host "    $($Global:Icons.Check) Junk purged: $JunkCount files." -ForegroundColor Gray
+        Purge-SentinelJunk -Locations $ArchiveLocs -Exclusions $JunkList
     } else {
         Write-Host "  $($Global:Icons.Check) Junk purge skipped per configuration." -ForegroundColor Gray
     }
@@ -224,16 +235,36 @@ function Invoke-SentinelArchiveSync {
                     $MonthNum  = $FileDate.ToString('MM')
                     $MonthName = $FileDate.ToString('MMMM')
                     $MonthFolder = Join-Path -Path $YearDir -ChildPath "$YearPart-$MonthNum $MonthName"
+                    $SortedCount++
 
                     if (-not $DryRun) {
                         try {
-                            if (-not (Test-Path -Path $MonthFolder)) { New-Item -Path $MonthFolder -ItemType Directory -Force | Out-Null }
-                            $Dest = Join-Path -Path $MonthFolder -ChildPath $File.Name
-                            if (-not (Test-Path -Path $Dest)) {
-                                Move-Item -Path $File.FullName -Destination $MonthFolder -Force -ErrorAction Stop
-                                $SortedCount++
+                            if (-not (Test-Path -Path $MonthFolder)) { 
+                                New-Item -Path $MonthFolder -ItemType Directory -Force | Out-Null 
                             }
-                        } catch { $Stats.Errors++ }
+                            
+                            $TargetFile = Join-Path -Path $MonthFolder -ChildPath $File.Name
+                            
+                            # If destination file already exists, generate a non-conflicting filename
+                            if (Test-Path -Path $TargetFile) {
+                                $BaseName  = [System.IO.Path]::GetFileNameWithoutExtension($File.Name)
+                                $Extension = [System.IO.Path]::GetExtension($File.Name)
+                                $Counter   = 1
+                                
+                                while (Test-Path -Path $TargetFile) {
+                                    $NewName    = "${BaseName}_${Counter}${Extension}"
+                                    $TargetFile = Join-Path -Path $Destination -ChildPath $NewName
+                                    $Counter++
+                                }
+                            }
+                            
+                            Move-Item -Path $File.FullName -Destination $TargetFile -Force -ErrorAction Stop
+                            $Stats.Moved++
+                            
+                        } catch {
+                            $Stats.Errors++
+                            Write-Host "`n  $($Global:Icons.Error) Failed to move '$($File.Name)': $($_.Exception.Message)" -ForegroundColor Red
+                        }
                     }
                 }
             }

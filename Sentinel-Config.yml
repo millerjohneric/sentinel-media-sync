@@ -101,7 +101,7 @@ Locations:
     SiteName: Source Studio
     SiteUrl: https://millerjohneric.asuscomm.com/docs
     TemplateDir: C:\Source\GEEK\Sentinel\sentinel-media-sync\templates
-    PurgeWebsite: false
+    PurgeWebsite: true
     PruneWebsite: true
     AutoStart: true
     NavigationUrls:
@@ -300,5 +300,5 @@ Locations:
     Scope: Global
     Structure:
       - Chrono
-autoPollWhileSync: true
+autoPollWhileSync: false
 portPollIntervalSeconds: 30

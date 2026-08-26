@@ -65,9 +65,58 @@ if (-not (Get-Command -Name ConvertFrom-Yaml -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+$ConfigPath = "C:\Source\GEEK\Sentinel\sentinel-media-sync\Sentinel-Config.yml"
 $Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
 
+foreach ($Loc in $Config.Locations) {
+    if ($Loc.Role -eq 'Website' -and $Loc.SitePath) {
+        Write-Host "Clearing website directory: $($Loc.SitePath)" -ForegroundColor Yellow
+        if (Test-Path -Path $Loc.SitePath) {
+            Remove-Item -Path $Loc.SitePath -Recurse -Force -ErrorAction SilentlyContinue
+        }
 
+        Write-Host "Installing fresh Docusaurus base..." -ForegroundColor Cyan
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx --yes create-docusaurus@latest `"$($Loc.SitePath)`" classic --typescript --skip-install" -NoNewWindow -Wait
+
+        # Quick check to confirm package.json is present
+        $PkgPath = Join-Path $Loc.SitePath "package.json"
+        if (-not (Test-Path $PkgPath)) {
+            Start-Sleep -Seconds 2
+        }
+
+        if ($Loc.TemplateDir -and (Test-Path -Path $Loc.TemplateDir)) {
+            Write-Host "Scaffolding base template..." -ForegroundColor Cyan
+            Copy-Item -Path "$($Loc.TemplateDir)\*" -Destination $Loc.SitePath -Recurse -Force
+        }
+
+        # Purge default Docusaurus boilerplate files that conflict with custom branding
+        $BoilerplateFiles = @(
+            "$($Loc.SitePath)\src\pages\index.js",
+            "$($Loc.SitePath)\src\pages\index.tsx",
+            "$($Loc.SitePath)\blog"
+        )
+        foreach ($Item in $BoilerplateFiles) {
+            if (Test-Path $Item) {
+                Remove-Item -Path $Item -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        Write-Host "Scaffolding content subdirectories (jems-tones, culinary-cuisine, millermade-handcrafted)..." -ForegroundColor Cyan
+        foreach ($SubDir in @('jems-tones', 'culinary-cuisine', 'millermade-handcrafted')) {
+            $DestSub = Join-Path $Loc.SitePath "docs\$SubDir"
+            if (-not (Test-Path $DestSub)) {
+                New-Item -Path $DestSub -ItemType Directory -Force | Out-Null
+            }
+        }
+        
+        if (Test-Path $PkgPath) {
+            Write-Host "Running final dependency install..." -ForegroundColor Cyan
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d `"$($Loc.SitePath)`" && npm install" -NoNewWindow -Wait
+        } else {
+            Write-Error "CRITICAL: package.json still missing in $($Loc.SitePath). Skipping npm install."
+        }
+    }
+}
 # ==============================================================================
 # 2. EXECUTION PIPELINE & BANNER
 # ==============================================================================
@@ -95,29 +144,35 @@ foreach ($loc in $Config.Locations) {
     Write-Host $path -ForegroundColor DarkGray
 }
 
-Write-Host "  ? Template Initialization Complete." -ForegroundColor Green
-Write-Host "  ? Initializing Web Root Structure..." -ForegroundColor Green
-Write-Host "  ? Homepage redirect created at src/pages/index.js" -ForegroundColor Green
+Write-Host "  $($Global:Icons.Check) Template Initialization Complete." -ForegroundColor Green
+Write-Host "  $($Global:Icons.Check) Initializing Web Root Structure..." -ForegroundColor Green
+Write-Host "  $($Global:Icons.Check) Homepage redirect created at src/pages/index.js" -ForegroundColor Green
 
 Start-Sleep -Seconds 1
 
 $WebRootLoc = $Config.Locations | Where-Object { $_.RootType -eq 'web-root' } | Select-Object -First 1
 $DeployPath = $WebRootLoc.SitePath
 
-# Phase 1: Staging & Branding Configuration
-Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor Cyan
-Write-Host "  ? Staging Templates from Seeds..." -ForegroundColor Green
-Write-Host "`n? Injecting Branding & Configs..." -ForegroundColor Green
-
-if ($Config.SiteName) {
-    Write-Host "  ? SiteName injected from configuration." -ForegroundColor Green
-} else {
-    Write-Host "  ? No SiteName found in YAML, using default." -ForegroundColor Yellow
+# Phase 0: Purge Website
+if ($Config.PurgeWebsite -eq $true -and $DeployPath -and (Test-Path -Path $DeployPath)) {
+    Write-Host "  $($Global:Icons.Warning) Purging website directory per configuration: $DeployPath" -ForegroundColor Yellow
+    Remove-Item -Path "$DeployPath\*" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "  ? Dynamic config updated: 3 nav items generated." -ForegroundColor Green
-Write-Host "     ? Fresh Engine Scaffolding & Branding Complete." -ForegroundColor Green
-Write-Host "  ? Docs index generated: /docs" -ForegroundColor Green
+# Phase 1: Staging & Branding Configuration
+Write-Host "`nPHASE 1: Preparing Staging Environment..." -ForegroundColor Cyan
+Write-Host "  $($Global:Icons.Check) Staging Templates from Seeds..." -ForegroundColor Green
+Write-Host "`n$($Global:Icons.Gear) Injecting Branding & Configs..." -ForegroundColor Green
+
+if ($Config.SiteName) {
+    Write-Host "  $($Global:Icons.Check) SiteName injected from configuration." -ForegroundColor Green
+} else {
+    Write-Host "  $($Global:Icons.Warning) No SiteName found in YAML, using default." -ForegroundColor Yellow
+}
+
+Write-Host "  $($Global:Icons.Check) Dynamic config updated: 3 nav items generated." -ForegroundColor Green
+Write-Host "     $($Global:Icons.Check) Fresh Engine Scaffolding & Branding Complete." -ForegroundColor Green
+Write-Host "  $($Global:Icons.Check) Docs index generated: /docs" -ForegroundColor Green
 
 if (Get-Command -Name Initialize-SentinelWebRoot -ErrorAction SilentlyContinue) {
     if ($DeployPath) {
@@ -131,9 +186,9 @@ if (Get-Command -Name Sync-SentinelGallery -ErrorAction SilentlyContinue) {
     foreach ($Gallery in $GalleryLocs) {
         if ($Gallery.Path -and $DeployPath) {
             Write-Host "`nProcessing Pipeline: Gallery" -ForegroundColor DarkGray
-            Write-Host "  ? Syncing Module: $($Gallery.Name)" -ForegroundColor Cyan
-            $GalleryOutput = Join-Path -Path $DeployPath -ChildPath ($Gallery.WebSubFolder -replace '/', '\')
-            Sync-SentinelGallery -Source $Gallery.Path -Output $GalleryOutput -TemplateDir $WebRootLoc.TemplateDir
+            Write-Host ""
+            Write-Host "  $($Global:Icons.Sync) Syncing Module: $($Gallery.Name)" -ForegroundColor Cyan
+            Sync-SentinelGallery -Location $Gallery -TargetWebsitePath $DeployPath
         }
     }
 }
@@ -144,11 +199,25 @@ if (Get-Command -Name Sync-SentinelRecipes -ErrorAction SilentlyContinue) {
     foreach ($Recipe in $RecipeLocs) {
         if ($Recipe -and $DeployPath) {
             if (Get-Command -Name Invoke-RecipeOcr -ErrorAction SilentlyContinue) {
-                Write-Host "`n  ? Processing Recipe OCR: $($Recipe.Name)" -ForegroundColor Cyan
+                Write-Host "`n  $($Global:Icons.Gear) Processing Recipe OCR: $($Recipe.Name)" -ForegroundColor Cyan
                 Invoke-RecipeOcr -Source $Recipe.Path
             }
-            Write-Host "  ? Syncing Module: $($Recipe.Name)" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "   $($Global:Icons.Sync) Syncing Module: $($Recipe.Name)" -ForegroundColor Cyan
             Sync-SentinelRecipes -Location $Recipe -TargetWebsitePath $DeployPath
+        }
+    }
+}
+
+# Phase 3.5: Handcrafted / Shop Module Sync
+if (Get-Command -Name Sync-SentinelShop -ErrorAction SilentlyContinue) {
+    $ShopLocs = $Config.Locations | Where-Object { $_.Role -eq 'Website' -and $_.Name -eq 'millermade-handcrafted' }
+    foreach ($Shop in $ShopLocs) {
+        if ($DeployPath) {
+            Write-Host "`nProcessing Pipeline: Shop ($($Shop.Name))" -ForegroundColor DarkGray
+            $StagingTarget = Join-Path -Path $DeployPath -ChildPath 'docs\millermade-handcrafted'
+            Write-Host ""
+            Sync-SentinelShop -StagingPath $StagingTarget -LocationConfig @{ ShopPath = $Shop.Path }
         }
     }
 }
