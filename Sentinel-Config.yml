@@ -55,6 +55,11 @@ FileTypes:
     - .mov
     - .avi
     - .mkv
+    - .m4v
+    - .wmv
+    - .flv
+    - .webm
+    - .mts
   Audio:
     - .mp3
     - .wav
@@ -101,8 +106,8 @@ Locations:
     SiteName: Source Studio
     SiteUrl: https://millerjohneric.asuscomm.com/docs
     TemplateDir: C:\Source\GEEK\Sentinel\sentinel-media-sync\templates
-    PurgeWebsite: true
-    PruneWebsite: true
+    PurgeWebsite: false
+    PruneWebsite: false
     AutoStart: true
     NavigationUrls:
       - Name: Sentinel Admin
@@ -284,15 +289,6 @@ Locations:
       - Chrono
   - Name: Nikon
     Path: C:\Users\mille\Pictures\Nikon Transfer 2
-    Role: Pickup
-    MonitorDepth: 99
-    SortDepth: 0
-    PurgeOrphan: false
-    Scope: Global
-    Structure:
-      - Chrono
-  - Name: SnippingTool
-    Path: C:\Users\mille\Pictures\SnippingTool
     Role: Pickup
     MonitorDepth: 99
     SortDepth: 0

@@ -65,58 +65,18 @@ if (-not (Get-Command -Name ConvertFrom-Yaml -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$ConfigPath = "C:\Source\GEEK\Sentinel\sentinel-media-sync\Sentinel-Config.yml"
 $Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
 
-foreach ($Loc in $Config.Locations) {
-    if ($Loc.Role -eq 'Website' -and $Loc.SitePath) {
-        Write-Host "Clearing website directory: $($Loc.SitePath)" -ForegroundColor Yellow
-        if (Test-Path -Path $Loc.SitePath) {
-            Remove-Item -Path $Loc.SitePath -Recurse -Force -ErrorAction SilentlyContinue
-        }
-
-        Write-Host "Installing fresh Docusaurus base..." -ForegroundColor Cyan
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c npx --yes create-docusaurus@latest `"$($Loc.SitePath)`" classic --typescript --skip-install" -NoNewWindow -Wait
-
-        # Quick check to confirm package.json is present
-        $PkgPath = Join-Path $Loc.SitePath "package.json"
-        if (-not (Test-Path $PkgPath)) {
-            Start-Sleep -Seconds 2
-        }
-
-        if ($Loc.TemplateDir -and (Test-Path -Path $Loc.TemplateDir)) {
-            Write-Host "Scaffolding base template..." -ForegroundColor Cyan
-            Copy-Item -Path "$($Loc.TemplateDir)\*" -Destination $Loc.SitePath -Recurse -Force
-        }
-
-        # Purge default Docusaurus boilerplate files that conflict with custom branding
-        $BoilerplateFiles = @(
-            "$($Loc.SitePath)\src\pages\index.js",
-            "$($Loc.SitePath)\src\pages\index.tsx",
-            "$($Loc.SitePath)\blog"
-        )
-        foreach ($Item in $BoilerplateFiles) {
-            if (Test-Path $Item) {
-                Remove-Item -Path $Item -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        Write-Host "Scaffolding content subdirectories (jems-tones, culinary-cuisine, millermade-handcrafted)..." -ForegroundColor Cyan
-        foreach ($SubDir in @('jems-tones', 'culinary-cuisine', 'millermade-handcrafted')) {
-            $DestSub = Join-Path $Loc.SitePath "docs\$SubDir"
-            if (-not (Test-Path $DestSub)) {
-                New-Item -Path $DestSub -ItemType Directory -Force | Out-Null
-            }
-        }
-        
-        if (Test-Path $PkgPath) {
-            Write-Host "Running final dependency install..." -ForegroundColor Cyan
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d `"$($Loc.SitePath)`" && npm install" -NoNewWindow -Wait
-        } else {
-            Write-Error "CRITICAL: package.json still missing in $($Loc.SitePath). Skipping npm install."
-        }
-    }
+# Execute the website builder function since it was auto-loaded from Public
+if (Get-Command -Name Build-SentinelWebsite -ErrorAction SilentlyContinue) {
+    Write-Host "Invoking Standalone Website Builder..." -ForegroundColor Cyan
+    Build-SentinelWebsite -ConfigPath $ConfigPath
+} else {
+    Write-Error "CRITICAL: Build-SentinelWebsite function not found. Ensure the script exists in the Public folder."
+    exit 1
 }
+
+
 # ==============================================================================
 # 2. EXECUTION PIPELINE & BANNER
 # ==============================================================================
@@ -227,6 +187,11 @@ if (Get-Command -Name Invoke-SentinelArchiveSync -ErrorAction SilentlyContinue) 
     Invoke-SentinelArchiveSync -Locations $Config.Locations -FileTypes $Config.FileTypes -Settings $Config.Settings
 }
 
+# Phase 4.8: Purge Junk Files & Empty Directories
+if (Get-Command -Name Purge-SentinelJunk -ErrorAction SilentlyContinue) {
+    Write-Host "`nPurging junk files and cleaning empty directories..." -ForegroundColor Cyan
+    Purge-SentinelJunk -Locations $Config.Locations -Exclusions $Config.FileTypes.Exclusions -JunkPatterns $Config.FileTypes.Junk
+}
 
 # ==============================================================================
 # 3. PACKAGING & SCHEDULED TASK REGISTRATION
@@ -262,3 +227,5 @@ if ($isAdmin) {
 } else {
     Write-Host "NOTICE: Scheduled task registration skipped (Administrator privileges required)." -ForegroundColor Yellow
 }
+
+

@@ -23,17 +23,26 @@ function Global:Invoke-SentinelArchiveSync {
     $DryRun   = $Settings.DryRun
     
     # Force lowercase and leading dots on all input extensions with safe array casting
+    # ---------------------------------------------------------
+    # 2. EXTENSION MAPPING & SANITIZATION
+    # ---------------------------------------------------------
     $ImgExts  = @($FileTypes['Images']) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
     $RawExts  = @($FileTypes['RAWs'])   | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
     $AudExts  = @($FileTypes['Audio'])  | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
-    $JunkList = $FileTypes['Junk']
+    $DocExts  = @($FileTypes['Docs'])   | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    $WebExts  = @($FileTypes['Web'])    | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    $SideExts = @($FileTypes['Sidecars'])| ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
+    
+    $JunkList = @($FileTypes['Junk'])
+    $Exclusions = @($FileTypes['Exclusions'])
+
     $VideoKeys = @('Videos', 'Video', 'Vid')
     $VideoRaw  = foreach ($k in $VideoKeys) { if ($FileTypes[$k]) { $FileTypes[$k] } }
     $VidExts   = @($VideoRaw) | ForEach-Object { if ($_ -and -not $_.StartsWith('.')) { ".$_" } else { $_ } } | ForEach-Object { if ($_) { $_.ToLower() } }
 
-    # Hardcoded fallback if YAML definitions fail to load
+    # Fallback if video extensions are missing
     if (-not $VidExts -or $VidExts.Count -eq 0) {
-        $VidExts = @('.mp4', '.mov', '.avi', '.mkv', '.m4v', '.wmv')
+        $VidExts = @('.mp4', '.mov', '.avi', '.mkv', '.m4v', '.wmv', '.flv', '.webm', '.mts', '.m2ts')
     }
     # Fallback default image extensions if YAML hashtable failed to load Images key
     if (-not $ImgExts -or $ImgExts.Count -eq 0) {
@@ -83,12 +92,48 @@ function Global:Invoke-SentinelArchiveSync {
                 if (Test-SentinelExclusion -FullPath $File.FullName) { continue }
             }
 
-            $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
-                try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
-                catch { $File.CreationTime }
-            } else { $File.CreationTime }
-            
-            # Ensure $FileDate has a fallback if parsing failed
+            # Helper function to extract EXIF Date Taken safely using Shell.Application
+            function Get-ExifDateTaken {
+                param ([Parameter(Mandatory = $true)] [string]$FilePath)
+                try {
+                    $Shell = New-Object -ComObject Shell.Application
+                    $ParentDir = [System.IO.Path]::GetDirectoryName($FilePath)
+                    $FileName = [System.IO.Path]::GetFileName($FilePath)
+                    $Folder = $Shell.Namespace($ParentDir)
+                    if ($Folder) {
+                        $ShellFile = $Folder.ParseName($FileName)
+                        if ($ShellFile) {
+                            # Property index 12 is typically "Date taken"
+                            $DateStr = $Folder.GetDetailsOf($ShellFile, 12)
+                            if (-not [string]::IsNullOrWhiteSpace($DateStr)) {
+                                # Clean up formatting characters (like directional marks) often returned by Shell
+                                $CleanDateStr = $DateStr -replace '[^\d/:\s]', ''
+                                [datetime]$ParsedExif = 0
+                                if ([datetime]::TryParse($CleanDateStr, [ref]$ParsedExif)) {
+                                    return $ParsedExif
+                                }
+                            }
+                        }
+                    }
+                } catch { }
+                return $null
+            }
+
+            # Date fallback resolution order: 
+            # 1. Filename regex match
+            # 2. EXIF / Metadata Date Taken (for images & videos)
+            # 3. File Creation/LastWrite timestamp
+            $FileDate = $null
+            if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
+                try { 
+                    $FileDate = Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 
+                } catch { }
+            }
+
+            if (-not $FileDate) {
+                $FileDate = Get-ExifDateTaken -FilePath $File.FullName
+            }
+
             if (-not $FileDate) {
                 $FileDate = $File.CreationTime
             }
@@ -203,13 +248,6 @@ function Global:Invoke-SentinelArchiveSync {
         Write-Host "  $($Global:Icons.Check) Sidecar reunion skipped per configuration." -ForegroundColor Gray
     }
 
-    # --- JUNK PURGE PHASE ---
-    if (-not $SkipJunk -and $JunkList) {
-        Purge-SentinelJunk -Locations $ArchiveLocs -Exclusions $JunkList
-    } else {
-        Write-Host "  $($Global:Icons.Check) Junk purge skipped per configuration." -ForegroundColor Gray
-    }
-
     # --- UNSORTED MONTH FOLDER SORTING ---
     Write-Host "  $($Global:Icons.Arrow) Sorting unsorted files into month folders..." -ForegroundColor Gray
     $SortedCount = 0
@@ -226,10 +264,20 @@ function Global:Invoke-SentinelArchiveSync {
                     $Ext = $File.Extension.ToLower()
                     if ($AllMedia -notcontains $Ext) { continue }
 
-                    $FileDate = if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
-                        try { Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 }
-                        catch { $File.CreationTime }
-                    } else { $File.CreationTime }
+                    $FileDate = $null
+                    if ($File.Name -match '(?<y>\d{4})-?(?<m>\d{2})-?(?<d>\d{2})') {
+                        try { 
+                            $FileDate = Get-Date -Year $Matches.y -Month $Matches.m -Day $Matches.d -Hour 0 -Minute 0 -Second 0 
+                        } catch { }
+                    }
+
+                    if (-not $FileDate) {
+                        $FileDate = Get-ExifDateTaken -FilePath $File.FullName
+                    }
+
+                    if (-not $FileDate) {
+                        $FileDate = $File.CreationTime
+                    }
 
                     $YearPart  = $FileDate.ToString('yyyy')
                     $MonthNum  = $FileDate.ToString('MM')
@@ -253,7 +301,7 @@ function Global:Invoke-SentinelArchiveSync {
                                 
                                 while (Test-Path -Path $TargetFile) {
                                     $NewName    = "${BaseName}_${Counter}${Extension}"
-                                    $TargetFile = Join-Path -Path $Destination -ChildPath $NewName
+                                    $TargetFile = Join-Path -Path $MonthFolder -ChildPath $NewName
                                     $Counter++
                                 }
                             }
