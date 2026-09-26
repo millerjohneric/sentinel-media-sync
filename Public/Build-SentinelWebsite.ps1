@@ -48,36 +48,118 @@ function Build-SentinelWebsite {
             }
 
             Write-Host "Installing fresh Docusaurus base..." -ForegroundColor Cyan
-            $NodePath = (Get-Command node).Source
-            $NpxCliPath = "C:\Program Files\nodejs\node_modules\npm\bin\npx-cli.js"
-            Start-Process -FilePath "$NodePath" -ArgumentList "`"$NpxCliPath`"", "--yes", "create-docusaurus@latest", "`"$($Loc.SitePath)`"", "classic", "--typescript", "--skip-install" -NoNewWindow -Wait
+            $NpxCmd = (Get-Command npx -ErrorAction SilentlyContinue).Source
+            if (-not $NpxCmd) {
+                $NpxCmd = "npx.cmd"
+            }
+            # Use PowerShell invocation to handle spaces properly
+            $ScriptBlock = {
+                param($npxPath, $sitePath)
+                & $npxPath --yes create-docusaurus@latest $sitePath classic --typescript --skip-install
+            }
+            & $ScriptBlock $NpxCmd $Loc.SitePath
 
             $PkgPath = Join-Path $Loc.SitePath "package.json"
             if (-not (Test-Path $PkgPath)) {
                 Start-Sleep -Seconds 2
             }
-
-            if ($Loc.TemplateDir -and (Test-Path -Path $Loc.TemplateDir)) {
-                Write-Host "Scaffolding base template..." -ForegroundColor Cyan
-                $TemplateItems = Join-Path $Loc.TemplateDir "*"
-                Copy-Item -Path $TemplateItems -Destination $Loc.SitePath -Recurse -Force
-            }
-
+            
             $BoilerplateFiles = @(
                 "$($Loc.SitePath)\src\pages\index.js",
                 "$($Loc.SitePath)\src\pages\index.tsx",
                 "$($Loc.SitePath)\blog",
                 "$($Loc.SitePath)\docs\intro.md",
+                "$($Loc.SitePath)\docs\intro.mdx",
                 "$($Loc.SitePath)\docs\tutorial",
                 "$($Loc.SitePath)\docs\tutorial-basics",
                 "$($Loc.SitePath)\docs\tutorial-extras",
                 "$($Loc.SitePath)\sidebars.js",
+                "$($Loc.SitePath)\sidebars.ts",
+                "$($Loc.SitePath)\docusaurus.config.js",
+                "$($Loc.SitePath)\docusaurus.config.ts",
                 "$($Loc.SitePath)\README.md",
                 "$($Loc.SitePath)\static\img"
             )
             foreach ($Item in $BoilerplateFiles) {
                 if (Test-Path $Item) {
                     Remove-Item -Path $Item -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if ($Loc.TemplateDir -and (Test-Path -Path $Loc.TemplateDir)) {
+                Write-Host "Scaffolding base template..." -ForegroundColor Cyan
+                
+                # Copy core-config files directly to the Docusaurus root
+                $CoreConfigDir = Join-Path $Loc.TemplateDir "core-config"
+                if (Test-Path $CoreConfigDir) {
+                    Copy-Item -Path "$CoreConfigDir\*" -Destination $Loc.SitePath -Recurse -Force
+
+                    # Deploy custom.css to src/css/custom.css
+                    $CustomCss = Join-Path $CoreConfigDir "custom.css"
+                    $DestCssDir = Join-Path $Loc.SitePath "src\css"
+                    if (Test-Path $CustomCss) {
+                        if (-not (Test-Path $DestCssDir)) {
+                            try { New-Item -Path $DestCssDir -ItemType Directory -Force | Out-Null }
+                            catch { Write-Warning "Could not create CSS directory: $_" }
+                        }
+                        if (Test-Path $DestCssDir) {
+                            try { Copy-Item -Path $CustomCss -Destination "$DestCssDir\custom.css" -Force }
+                            catch { Write-Warning "Could not copy custom.css: $_" }
+                        }
+                    }
+
+                    # Deploy index.js to src/pages/index.js (redirect / home)
+                    $HomePage = Join-Path $CoreConfigDir "index.js"
+                    $DestPagesDir = Join-Path $Loc.SitePath "src\pages"
+                    if (Test-Path $HomePage) {
+                        if (-not (Test-Path $DestPagesDir)) {
+                            try { New-Item -Path $DestPagesDir -ItemType Directory -Force | Out-Null }
+                            catch { Write-Warning "Could not create pages directory: $_" }
+                        }
+                        if (Test-Path $DestPagesDir) {
+                            try { Copy-Item -Path $HomePage -Destination "$DestPagesDir\index.js" -Force }
+                            catch { Write-Warning "Could not copy index.js: $_" }
+                        }
+                    }
+                }
+
+                # Copy components to src/components
+                $ComponentsDir = Join-Path $Loc.TemplateDir "components"
+                if (Test-Path $ComponentsDir) {
+                    $DestComponentsDir = Join-Path $Loc.SitePath "src\components"
+                    if (-not (Test-Path $DestComponentsDir)) {
+                        try { New-Item -Path $DestComponentsDir -ItemType Directory -Force | Out-Null }
+                        catch { Write-Warning "Could not create components directory: $_" }
+                    }
+                    if (Test-Path $DestComponentsDir) {
+                        try { Copy-Item -Path "$ComponentsDir\*" -Destination $DestComponentsDir -Recurse -Force }
+                        catch { Write-Warning "Could not copy components: $_" }
+                    }
+                }
+
+                # Copy branding assets to static/img if present
+                $BrandingDir = Join-Path $Loc.TemplateDir "branding"
+                if (Test-Path $BrandingDir) {
+                    $StaticImgDir = Join-Path $Loc.SitePath "static\img"
+                    if (-not (Test-Path $StaticImgDir)) {
+                        try { New-Item -Path $StaticImgDir -ItemType Directory -Force | Out-Null }
+                        catch { Write-Warning "Could not create static\img directory: $_" }
+                    }
+                    $BrandingImg = Join-Path $BrandingDir "img"
+                    if (Test-Path $BrandingImg) {
+                        try { Copy-Item -Path "$BrandingImg\*" -Destination $StaticImgDir -Recurse -Force }
+                        catch { Write-Warning "Could not copy branding images: $_" }
+                    } else {
+                        try { Copy-Item -Path "$BrandingDir\*" -Destination $StaticImgDir -Recurse -Force }
+                        catch { Write-Warning "Could not copy branding assets: $_" }
+                    }
+                }
+
+                # Copy overview doc index if available
+                $OverviewDoc = Join-Path $Loc.TemplateDir "content-seeds\docs\index - overview.md"
+                $DestDocsDir = Join-Path $Loc.SitePath "docs"
+                if (Test-Path $OverviewDoc) {
+                    try { Copy-Item -Path $OverviewDoc -Destination "$DestDocsDir\index.md" -Force }
+                    catch { Write-Warning "Could not copy overview doc: $_" }
                 }
             }
 

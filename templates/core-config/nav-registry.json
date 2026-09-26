@@ -1,30 +1,30 @@
-﻿[
+[
     {
         "title":  "Source Studio Engine",
-        "description":  "Unified web-docs Archive",
+        "description":  "Unified Media & Documentation Overview",
         "link":  "/docs",
-        "lastUpdate":  "2026-02-21 10:25:29",
-        "version":  "20.28"
+        "lastUpdate":  "2026-09-11 11:05:00",
+        "version":  "20.332"
+    },
+    {
+        "title":  "Jems Tones",
+        "description":  "Photography Portfolio & Gallery Archive",
+        "link":  "/docs/jems-tones",
+        "lastUpdate":  "2026-09-11 11:05:00",
+        "version":  "20.332"
     },
     {
         "title":  "Culinary Cuisine",
-        "description":  "Unified web-culinary Archive",
-        "link":  "/culinary-cuisine",
-        "lastUpdate":  "2026-02-21 10:25:29",
-        "version":  "20.28"
+        "description":  "Digital Cookbook & Kitchen Recipe Archive",
+        "link":  "/docs/culinary-cuisine",
+        "lastUpdate":  "2026-09-11 11:05:00",
+        "version":  "20.332"
     },
     {
-        "title":  "jems-tones",
-        "description":  "Unified web-gallery Archive",
-        "link":  "/jems-tones",
-        "lastUpdate":  "2026-02-21 10:25:29",
-        "version":  "20.28"
-    },
-    {
-        "title":  "millermade-handcrafted",
-        "description":  "Unified web-shop Archive",
-        "link":  "/millermade-handcrafted",
-        "lastUpdate":  "2026-02-21 10:25:29",
-        "version":  "20.28"
+        "title":  "MillerMade Handcrafted",
+        "description":  "Artisanal Soaps & Body Care Catalog",
+        "link":  "/docs/millermade-handcrafted",
+        "lastUpdate":  "2026-09-11 11:05:00",
+        "version":  "20.332"
     }
 ]

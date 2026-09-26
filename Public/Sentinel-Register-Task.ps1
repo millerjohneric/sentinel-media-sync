@@ -9,7 +9,7 @@ $XmlPath = Join-Path $ScriptFolder "Sentinel-Daily-Deployment.xml"
 
 # Ensure running as Administrator
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Error "MISSION ABORTED: This script must be run with Administrator privileges."
+    Write-Warning "MISSION ABORTED: This script must be run with Administrator privileges."
     return
 }
 

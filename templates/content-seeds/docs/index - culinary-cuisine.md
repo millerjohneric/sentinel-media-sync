@@ -1,9 +1,8 @@
-﻿---
-'id': 'recipe-index'
-'title': 'Recipes'
-'sidebar_label': 'Recipes'
-'sidebar_position': 1
-'slug': '/'
+---
+title: 'Culinary Cuisine Recipes'
+sidebar_label: 'Recipes'
+sidebar_position: 1
+slug: /culinary-cuisine
 ---
 
 # Index

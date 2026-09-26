@@ -1,9 +1,8 @@
-﻿---
-'id': 'gallery-index'
-'title': 'Gallery'
-'sidebar_label': 'Gallery'
-'sidebar_position': 3
-'slug': '/'
+---
+title: 'Jems Tones Gallery'
+sidebar_label: 'Gallery'
+sidebar_position: 1
+slug: /jems-tones
 ---
 
 # 📸 Photography Portfolio

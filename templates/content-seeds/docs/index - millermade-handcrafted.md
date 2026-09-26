@@ -1,9 +1,8 @@
-﻿---
-'id': 'millermade-index'
-'title': 'MillerMade Handcrafted'
-'sidebar_label': 'Handcrafted Shop'
-'sidebar_position': 2
-'slug': '/'
+---
+title: 'MillerMade Handcrafted'
+sidebar_label: 'Handcrafted Shop'
+sidebar_position: 1
+slug: /millermade-handcrafted
 ---
 
 # 🧼 MillerMade Handcrafted
